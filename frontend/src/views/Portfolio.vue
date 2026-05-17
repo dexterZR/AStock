@@ -295,7 +295,14 @@ async function submitTrade() {
   if (!f.price || f.price <= 0) { ElMessage.warning('请填写有效的价格'); return }
   if (!f.shares || f.shares <= 0) { ElMessage.warning('请填写有效的数量'); return }
   if (!f.decision_logic?.trim()) { ElMessage.warning('请填写决策逻辑'); return }
-  await request.post('/portfolio/trades', tradeForm.value); ElMessage.success('已保存'); showAddTrade.value = false; fetchData()
+  try {
+    await request.post('/portfolio/trades', tradeForm.value)
+    ElMessage.success('交易记录已保存')
+    showAddTrade.value = false
+    fetchData()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '保存失败')
+  }
 }
 function viewDetails(ts_code: string) { router.push({ path:'/stock', query:{ code: ts_code }}) }
 function showSellDialog(row: any) { tradeForm.value = { ts_code:row.ts_code, name:row.name, action:'sell', price:row.latest_price, shares:row.total_shares, trade_date:new Date().toISOString().slice(0,10).replace(/-/g,''), decision_logic:'', emotion:'calm', market_view:'', target_price:undefined, stop_loss:undefined, tags:[] }; showAddTrade.value = true }

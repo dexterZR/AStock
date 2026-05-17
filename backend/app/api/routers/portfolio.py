@@ -60,6 +60,24 @@ async def get_stats(service: PortfolioService = Depends(get_portfolio_service)):
     return BaseResponse(data=data)
 
 
+# ===== 盈亏计算 =====
+@router.get("/pnl-summary")
+async def get_pnl_summary(service: PortfolioService = Depends(get_portfolio_service)):
+    """总盈亏概览：未实现 + 已实现"""
+    data = await service.get_pnl_summary()
+    return BaseResponse(data=data)
+
+
+@router.get("/holdings/{ts_code}")
+async def get_holding_detail(ts_code: str, service: PortfolioService = Depends(get_portfolio_service)):
+    """单只股票持仓详情（含已实现盈亏和交易记录）"""
+    data = await service.get_holding_detail(ts_code)
+    if not data:
+        from fastapi import HTTPException
+        raise HTTPException(404, f"未找到 {ts_code} 的持仓记录")
+    return BaseResponse(data=data)
+
+
 # 事件相关API
 @router.post("/events")
 async def add_event(event: dict, service: EventService = Depends(get_event_service)):

@@ -127,3 +127,157 @@ class PortfolioService:
             "sell_count": len(sell_trades),
             "avg_buy_price": sum(t["price"] for t in buy_trades) / len(buy_trades) if buy_trades else 0,
         }
+
+    async def get_realized_pnl(self, ts_code: Optional[str] = None) -> List[Dict]:
+        """计算已实现盈亏（FIFO 成本匹配卖出）"""
+        query = {}
+        if ts_code:
+            query["ts_code"] = ts_code
+
+        # 分组计算每只股票的已实现盈亏
+        pipeline = [
+            {"$match": query},
+            {"$sort": {"trade_date": 1}},
+            {"$group": {
+                "_id": "$ts_code",
+                "name": {"$first": "$name"},
+                "trades": {"$push": {
+                    "action": "$action", "price": "$price",
+                    "shares": "$shares", "trade_date": "$trade_date",
+                }},
+            }},
+        ]
+        results = await self.db["trades"].aggregate(pipeline).to_list(None)
+
+        realized_list = []
+        for r in results:
+            ts = r["_id"]
+            name = r.get("name", ts)
+            trades = r["trades"]
+
+            # 累计买入量和总成本
+            total_buy_shares = 0
+            total_buy_cost = 0.0
+            realized_pnl = 0.0
+            sell_count = 0
+
+            for t in trades:
+                if t["action"] == "buy":
+                    total_buy_shares += t["shares"]
+                    total_buy_cost += t["price"] * t["shares"]
+                elif t["action"] == "sell":
+                    sell_shares = t["shares"]
+                    sell_price = t["price"]
+                    sell_count += 1
+
+                    if total_buy_shares >= sell_shares:
+                        # 有足够的买入来匹配
+                        avg_cost = total_buy_cost / total_buy_shares
+                        pnl = (sell_price - avg_cost) * sell_shares
+                        realized_pnl += pnl
+                        # 按比例减少持仓
+                        ratio = sell_shares / total_buy_shares
+                        total_buy_cost -= total_buy_cost * ratio
+                        total_buy_shares -= sell_shares
+                    else:
+                        # 卖超了（不太正常但兜底）
+                        pnl = (sell_price - (total_buy_cost / max(total_buy_shares, 1))) * total_buy_shares
+                        realized_pnl += pnl
+                        total_buy_shares = 0
+                        total_buy_cost = 0.0
+
+            # 剩余持仓（未实现）
+            remaining_shares = total_buy_shares
+            remaining_avg_cost = total_buy_cost / remaining_shares if remaining_shares > 0 else 0
+
+            realized_list.append({
+                "ts_code": ts,
+                "name": name,
+                "realized_pnl": round(realized_pnl, 2),
+                "sell_count": sell_count,
+                "remaining_shares": remaining_shares,
+                "remaining_avg_cost": round(remaining_avg_cost, 3),
+            })
+
+        return realized_list
+
+    async def get_pnl_summary(self) -> Dict:
+        """盈亏总览：未实现 + 已实现"""
+        # 未实现盈亏（当前持仓）
+        holdings = await self.get_holdings()
+        total_unrealized = sum(h.get("unrealized_pnl", 0) for h in holdings)
+        total_market_value = sum(h.get("market_value", 0) for h in holdings)
+        total_cost = sum(
+            (h.get("avg_cost", 0) * h.get("total_shares", 0))
+            for h in holdings
+        )
+
+        # 已实现盈亏
+        realized_list = await self.get_realized_pnl()
+        total_realized = sum(r["realized_pnl"] for r in realized_list)
+
+        # 按股票汇总
+        holding_map = {h["ts_code"]: h for h in holdings}
+        stock_summary = []
+        all_codes = set(list(holding_map.keys()) + [r["ts_code"] for r in realized_list])
+
+        for ts_code in sorted(all_codes):
+            h = holding_map.get(ts_code, {})
+            r = next((x for x in realized_list if x["ts_code"] == ts_code), None)
+
+            stock_summary.append({
+                "ts_code": ts_code,
+                "name": h.get("name") or (r["name"] if r else ts_code),
+                "unrealized_pnl": round(h.get("unrealized_pnl", 0), 2),
+                "unrealized_pnl_pct": round(h.get("unrealized_pnl_pct", 0), 2),
+                "realized_pnl": r["realized_pnl"] if r else 0,
+                "total_pnl": round(
+                    (h.get("unrealized_pnl", 0) or 0) + (r["realized_pnl"] if r else 0), 2
+                ),
+                "market_value": round(h.get("market_value", 0), 2),
+                "remaining_shares": h.get("total_shares", 0) or (r["remaining_shares"] if r else 0),
+            })
+
+        return {
+            "total_unrealized_pnl": round(total_unrealized, 2),
+            "total_realized_pnl": round(total_realized, 2),
+            "total_pnl": round(total_unrealized + total_realized, 2),
+            "total_market_value": round(total_market_value, 2),
+            "total_cost": round(total_cost, 2),
+            "position_count": len(holdings),
+            "stocks": stock_summary,
+        }
+
+    async def get_holding_detail(self, ts_code: str) -> Optional[Dict]:
+        """获取单只股票的持仓详情（含已实现盈亏和交易记录）"""
+        holdings = await self.get_holdings()
+        holding = next((h for h in holdings if h["ts_code"] == ts_code), None)
+
+        trades = await self.get_trades(ts_code)
+        realized = await self.get_realized_pnl(ts_code)
+
+        # 成本线
+        cost_doc = await self.db["cost_lines"].find_one({"ts_code": ts_code}, {"_id": 0})
+        if not cost_doc and trades:
+            buy_trades = [t for t in trades if t["action"] == "buy"]
+            if buy_trades:
+                total_buy_cost = sum(t["price"] * t["shares"] for t in buy_trades)
+                total_buy_shares = sum(t["shares"] for t in buy_trades)
+                avg = round(total_buy_cost / total_buy_shares, 3) if total_buy_shares > 0 else 0
+                cost_doc = {
+                    "ts_code": ts_code,
+                    "cost_price": avg,
+                    "add_price": None,
+                    "reduce_price": None,
+                    "stop_loss_price": None,
+                    "position_qty": total_buy_shares,
+                }
+
+        result = {
+            "ts_code": ts_code,
+            "holding": holding,
+            "trades": trades,
+            "cost_line": cost_doc,
+            "realized_pnl": realized[0] if realized else None,
+        }
+        return result

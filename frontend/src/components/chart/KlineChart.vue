@@ -38,6 +38,7 @@ interface Props {
   maData?: Record<string, { time: string; value: number }[]>
   volumeData?: { time: string; value: number; color: string }[]
   costLines?: CostLine[]
+  range?: string
 }
 
 const props = defineProps<Props>()
@@ -208,7 +209,41 @@ function updateData() {
   }
 
   chart.timeScale().fitContent()
+  applyRange()
   updateCostLines()
+}
+
+function applyRange() {
+  if (!chart || !props.data || props.data.length === 0) return
+  if (!props.range || props.range === 'All') {
+    chart.timeScale().fitContent()
+    return
+  }
+  const data = props.data
+  const lastTime = data[data.length - 1].time
+
+  // Calculate range in business days
+  const rangeDays: Record<string, number> = {
+    '1M': 22,
+    '3M': 66,
+    '6M': 132,
+    '1Y': 252,
+  }
+  const days = rangeDays[props.range] || 0
+  if (days <= 0) {
+    chart.timeScale().fitContent()
+    return
+  }
+
+  const startIdx = Math.max(0, data.length - days - 10) // add buffer
+  const fromTime = data[startIdx].time
+
+  try {
+    chart.timeScale().setVisibleRange({ from: fromTime as any, to: lastTime as any })
+  } catch {
+    // fallback: setVisibleRange may fail if range is too small
+    chart.timeScale().fitContent()
+  }
 }
 
 function updateCostLines() {

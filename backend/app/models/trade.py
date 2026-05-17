@@ -12,6 +12,7 @@ class TradeCreate(BaseModel):
     emotion: str = Field("calm", description="交易情绪")
     target_price: Optional[float] = None
     stop_loss: Optional[float] = None
+    market_view: Optional[str] = Field(None, description="大盘看法/市场观点")
     tags: List[str] = Field(default_factory=list)
 
 class DecisionCreate(BaseModel):
