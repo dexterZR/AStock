@@ -1,0 +1,9 @@
+{
+  "name": "A股行情分析平台",
+  "short_name": "AStock",
+  "description": "AI多Agent驱动的智能股票分析工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf8f5",
+  "theme_color": "#d97706"
+}

@@ -1,0 +1,51 @@
+<h2>选股器 · 整体架构</h2>
+<p class="subtitle">三大模块协作流程</p>
+
+<div class="section" style="margin-bottom:32px">
+  <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center">
+    <div style="flex:1;min-width:280px;background:var(--claude-bg);border:1px solid var(--claude-border);border-radius:var(--radius-md);padding:20px">
+      <div style="font-size:24px;margin-bottom:8px">⚙️</div>
+      <h3 style="margin:0 0 8px">条件引擎</h3>
+      <p style="font-size:13px;color:var(--claude-text-secondary);margin:0">预计算信号 + 实时聚合查询<br>标签卡片式条件组合</p>
+      <div style="margin-top:12px;font-size:12px;color:var(--claude-text-secondary)">
+        <div>• 技术信号（MA金叉/RSI超买/KDJ…）</div>
+        <div>• 形态识别（突破新高/放量上攻…）</div>
+        <div>• 基本面（PE/PB/ROE…）</div>
+        <div>• 资金流向（主力/北向…）</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:24px;color:var(--claude-text-secondary)">→</div>
+    <div style="flex:1;min-width:280px;background:var(--claude-bg);border:1px solid var(--claude-border);border-radius:var(--radius-md);padding:20px;border-left:4px solid #7c3aed">
+      <div style="font-size:24px;margin-bottom:8px">🤖</div>
+      <h3 style="margin:0 0 8px">AI 中枢</h3>
+      <p style="font-size:13px;color:var(--claude-text-secondary);margin:0">四个 AI 能力深度参与选股全流程</p>
+      <div style="margin-top:12px;font-size:12px;color:var(--claude-text-secondary)">
+        <div>• 🗣️ 自然语言选股</div>
+        <div>• 🎯 AI 智能筛选</div>
+        <div>• 📊 AI 解读结果</div>
+        <div>• 📡 AI 每日推荐</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:24px;color:var(--claude-text-secondary)">→</div>
+    <div style="flex:1;min-width:280px;background:var(--claude-bg);border:1px solid var(--claude-border);border-radius:var(--radius-md);padding:20px">
+      <div style="font-size:24px;margin-bottom:8px">📈</div>
+      <h3 style="margin:0 0 8px">结果展示</h3>
+      <p style="font-size:13px;color:var(--claude-text-secondary);margin:0">多视图 + 可视化呈现</p>
+      <div style="margin-top:12px;font-size:12px;color:var(--claude-text-secondary)">
+        <div>• 📋 增强表格视图</div>
+        <div>• 🃏 卡片视图（迷你K线）</div>
+        <div>• 🫧 气泡图/热力图</div>
+        <div>• 📥 导出/对比/AI分析</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="background:var(--claude-bg);border:1px solid var(--claude-border);border-radius:var(--radius-md);padding:16px;margin-top:16px">
+  <h3 style="margin:0 0 12px;font-size:14px">数据层新增集合</h3>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <span style="background:#7c3aed22;color:#7c3aed;padding:4px 12px;border-radius:12px;font-size:12px">fundamentals 基本面</span>
+    <span style="background:#2563eb22;color:#2563eb;padding:4px 12px;border-radius:12px;font-size:12px">capital_flow 资金流向</span>
+    <span style="background:#05966922;color:#059669;padding:4px 12px;border-radius:12px;font-size:12px">screener_signals 预计算信号</span>
+  </div>
+</div>

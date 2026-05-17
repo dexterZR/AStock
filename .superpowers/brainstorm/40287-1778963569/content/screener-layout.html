@@ -1,0 +1,131 @@
+<h2>选股器 · 页面布局线框图</h2>
+<p class="subtitle">从上到下：AI入口 → 策略模板 → 条件组合器 → 结果展示</p>
+
+<div class="mockup" style="margin-bottom:24px">
+  <div class="mockup-header">选股器页面布局</div>
+  <div class="mockup-body" style="padding:16px;background:#0a0a0a">
+    
+    <!-- AI 入口区 -->
+    <div style="background:#1a1a2e;border:1px solid #7c3aed;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="background:#7c3aed;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">AI</span>
+        <span style="color:#a78bfa;font-size:13px;font-weight:600">智能选股</span>
+      </div>
+      <div style="background:#111;border:1px solid #333;border-radius:6px;padding:10px;display:flex;align-items:center;gap:8px">
+        <span style="color:#666;font-size:12px">💬</span>
+        <span style="color:#888;font-size:12px">描述你想找什么样的股票，例如"近期放量突破的低价股"…</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <span style="background:#7c3aed22;color:#a78bfa;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer">🎯 AI帮我选</span>
+        <span style="background:#2563eb22;color:#60a5fa;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer">📡 今日AI推荐</span>
+      </div>
+    </div>
+
+    <!-- 策略模板区 -->
+    <div style="background:#111;border:1px solid #333;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="color:#e0e0e0;font-size:13px;font-weight:600">📋 策略模板</span>
+        <span style="color:#666;font-size:11px">选择模板自动填充条件 →</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span style="background:#05966922;color:#34d399;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #05966944">🚀 突破新高</span>
+        <span style="background:#2563eb22;color:#60a5fa;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #2563eb44">📈 均线多头</span>
+        <span style="background:#dc262622;color:#f87171;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #dc262644">🔄 超跌反弹</span>
+        <span style="background:#d9770622;color:#fbbf24;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #d9770644">💰 低估值</span>
+        <span style="background:#7c3aed22;color:#a78bfa;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #7c3aed44">🔥 放量上攻</span>
+        <span style="background:#0891b222;color:#22d3ee;padding:4px 12px;border-radius:6px;font-size:12px;border:1px solid #0891b244">🏦 北向加仓</span>
+      </div>
+    </div>
+
+    <!-- 条件组合器区 -->
+    <div style="background:#111;border:1px solid #333;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="color:#e0e0e0;font-size:13px;font-weight:600">🔧 筛选条件</span>
+        <div style="display:flex;gap:6px">
+          <span style="background:#2563eb;color:#fff;padding:3px 10px;border-radius:4px;font-size:11px">+ 添加条件</span>
+          <span style="background:#333;color:#aaa;padding:3px 10px;border-radius:4px;font-size:11px">清空</span>
+        </div>
+      </div>
+      <!-- 条件标签卡片 -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <div style="background:#1a1a2e;border:1px solid #7c3aed;border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+          <span style="color:#a78bfa;font-size:11px;font-weight:600">技术</span>
+          <span style="color:#e0e0e0;font-size:12px">MA5 上穿 MA20</span>
+          <span style="color:#666;font-size:14px;cursor:pointer">×</span>
+        </div>
+        <div style="background:#1a1a2e;border:1px solid #7c3aed;border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+          <span style="color:#a78bfa;font-size:11px;font-weight:600">技术</span>
+          <span style="color:#e0e0e0;font-size:12px">RSI6 &lt; 30</span>
+          <span style="color:#666;font-size:14px;cursor:pointer">×</span>
+        </div>
+        <div style="background:#0a1a2e;border:1px solid #2563eb;border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+          <span style="color:#60a5fa;font-size:11px;font-weight:600">基本</span>
+          <span style="color:#e0e0e0;font-size:12px">PE 0 ~ 30</span>
+          <span style="color:#666;font-size:14px;cursor:pointer">×</span>
+        </div>
+        <div style="background:#0a1a1e;border:1px solid #059669;border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+          <span style="color:#34d399;font-size:11px;font-weight:600">形态</span>
+          <span style="color:#e0e0e0;font-size:12px">突破20日新高</span>
+          <span style="color:#666;font-size:14px;cursor:pointer">×</span>
+        </div>
+        <div style="background:#1a1a0e;border:1px solid #d97706;border-radius:6px;padding:6px 12px;display:flex;align-items:center;gap:6px">
+          <span style="color:#fbbf24;font-size:11px;font-weight:600">资金</span>
+          <span style="color:#e0e0e0;font-size:12px">主力净买入 &gt; 0</span>
+          <span style="color:#666;font-size:14px;cursor:pointer">×</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="background:#059669;color:#fff;padding:6px 20px;border-radius:6px;font-size:13px;font-weight:600">执行筛选</span>
+        <span style="color:#666;font-size:12px">已选 5 个条件 · 预计匹配 ~23 只</span>
+      </div>
+    </div>
+
+    <!-- 结果展示区 -->
+    <div style="background:#111;border:1px solid #333;border-radius:8px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="color:#e0e0e0;font-size:13px;font-weight:600">📊 筛选结果</span>
+          <span style="color:#666;font-size:12px">共 23 只</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span style="background:#2563eb;color:#fff;padding:3px 8px;border-radius:4px;font-size:11px">📋 表格</span>
+          <span style="background:#222;color:#aaa;padding:3px 8px;border-radius:4px;font-size:11px">🃏 卡片</span>
+          <span style="background:#222;color:#aaa;padding:3px 8px;border-radius:4px;font-size:11px">🫧 气泡图</span>
+          <span style="background:#222;color:#aaa;padding:3px 8px;border-radius:4px;font-size:11px">🗺️ 热力图</span>
+        </div>
+      </div>
+      <!-- 迷你表格预览 -->
+      <div style="width:100%;font-size:12px">
+        <div style="display:grid;grid-template-columns:40px 80px 1fr 60px 70px 60px 60px 80px;gap:0;border-bottom:1px solid #333;padding:4px 0;color:#888">
+          <div>☐</div><div>代码</div><div>名称</div><div>现价</div><div>涨跌幅</div><div>PE</div><div>RSI</div><div>信号</div>
+        </div>
+        <div style="display:grid;grid-template-columns:40px 80px 1fr 60px 70px 60px 60px 80px;gap:0;padding:6px 0;border-bottom:1px solid #1a1a1a;color:#e0e0e0">
+          <div>☐</div><div style="color:#888">600519</div><div>贵州茅台</div><div>1680</div><div style="color:#f87171">+2.3%</div><div>28.5</div><div>45</div><div><span style="background:#05966922;color:#34d399;padding:1px 6px;border-radius:3px;font-size:10px">突破</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:40px 80px 1fr 60px 70px 60px 60px 80px;gap:0;padding:6px 0;border-bottom:1px solid #1a1a1a;color:#e0e0e0">
+          <div>☐</div><div style="color:#888">000858</div><div>五粮液</div><div>142</div><div style="color:#34d399">-1.2%</div><div>22.1</div><div>35</div><div><span style="background:#7c3aed22;color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px">金叉</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:40px 80px 1fr 60px 70px 60px 60px 80px;gap:0;padding:6px 0;color:#666;font-size:11px">
+          <div>…</div><div>…</div><div>更多结果</div><div>…</div><div>…</div><div>…</div><div>…</div><div>…</div>
+        </div>
+      </div>
+      <!-- 底部操作栏 -->
+      <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+        <span style="background:#7c3aed;color:#fff;padding:5px 14px;border-radius:6px;font-size:12px">🤖 AI解读结果</span>
+        <span style="background:#333;color:#aaa;padding:5px 14px;border-radius:6px;font-size:12px">⚖️ 对比</span>
+        <span style="background:#333;color:#aaa;padding:5px 14px;border-radius:6px;font-size:12px">📥 导出CSV</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div style="background:var(--claude-bg);border:1px solid var(--claude-border);border-radius:var(--radius-md);padding:16px">
+  <h3 style="margin:0 0 8px;font-size:14px">布局说明</h3>
+  <ul style="margin:0;padding-left:20px;font-size:13px;color:var(--claude-text-secondary);line-height:1.8">
+    <li><strong>顶部 AI 入口</strong>：自然语言输入框 + 快捷按钮，最醒目的位置</li>
+    <li><strong>策略模板</strong>：横排标签，点击自动填充下方条件</li>
+    <li><strong>条件组合器</strong>：彩色标签卡片，按类别分色（紫=技术/蓝=基本/绿=形态/黄=资金），可添加/删除</li>
+    <li><strong>结果展示</strong>：四种视图切换，底部 AI 解读/对比/导出操作栏</li>
+  </ul>
+</div>
