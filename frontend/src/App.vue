@@ -1,7 +1,12 @@
 <template>
   <div class="app-wrapper" :class="themeClass">
     <el-config-provider>
-      <el-container class="layout-container">
+      <!-- 登录页：全屏独立渲染，无侧边栏/顶栏 -->
+      <div v-if="isLoginPage" class="login-container">
+        <router-view />
+      </div>
+      <!-- 内部页面：标准布局 -->
+      <el-container v-else class="layout-container">
         <el-aside width="220px" class="sidebar">
           <div class="logo" @click="$router.push('/')">
             <span class="logo-mark">A</span>
@@ -90,6 +95,7 @@ const pageTitles: Record<string, string> = {
   '/portfolio': '持仓管理',
 }
 const pageTitle = computed(() => pageTitles[route.path] || 'A股行情分析平台')
+const isLoginPage = computed(() => route.path === '/login')
 
 function toggleTheme() {
   isDark.value = !isDark.value

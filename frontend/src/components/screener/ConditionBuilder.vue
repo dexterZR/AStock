@@ -87,7 +87,7 @@ const paramMin = ref<number | undefined>(undefined)
 const paramMax = ref<number | undefined>(undefined)
 const paramBool = ref(true)
 
-const categories: ConditionCategory[] = ['technical', 'fundamental', 'pattern', 'capital', 'quote']
+const categories: ConditionCategory[] = ['technical', 'fundamental', 'pattern', 'quote']
 
 function getCategoryLabel(cat: ConditionCategory): string {
   return CATEGORY_CONFIG[cat].label

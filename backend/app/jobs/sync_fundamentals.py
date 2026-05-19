@@ -60,7 +60,7 @@ async def _sync_via_tushare(db):
     ops = []
     for _, row in df.iterrows():
         ts_code = str(row.get("ts_code", ""))
-        if not ts_code:
+        if not ts_code or ts_code.endswith(".BJ"):
             continue
         doc = {
             "ts_code": ts_code,
@@ -209,18 +209,14 @@ async def _sync_via_baidu(db, codes):
             pass
 
         if pe_val is not None or pb_val is not None:
-            doc = {
-                "ts_code": ts_code,
-                "trade_date": datetime.now().strftime("%Y%m%d"),
-                "pe": pe_val,
-                "pb": pb_val,
-                "roe": None,
-                "revenue_growth": None,
-                "profit_growth": None,
-                "dividend_yield": None,
-                "total_mv": mv_val,
-                "circ_mv": None,
-            }
+            doc = {}
+            if pe_val is not None:
+                doc["pe"] = pe_val
+            if pb_val is not None:
+                doc["pb"] = pb_val
+            if mv_val is not None:
+                doc["total_mv"] = mv_val
+            doc["trade_date"] = datetime.now().strftime("%Y%m%d")
             ops.append(UpdateOne(
                 {"ts_code": ts_code},
                 {"$set": doc},

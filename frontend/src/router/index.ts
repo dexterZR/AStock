@@ -20,6 +20,16 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach(() => {})
+router.beforeEach((to, _from, next) => {
+  const token = localStorage.getItem('astock_token')
+  if (to.meta.guest) {
+    // 登录页：已登录则跳首页
+    if (token) return next('/')
+    return next()
+  }
+  // 非登录页：未登录则跳登录
+  if (!token) return next('/login')
+  next()
+})
 
 export default router

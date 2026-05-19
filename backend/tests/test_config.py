@@ -9,7 +9,7 @@ class TestSettings:
         monkeypatch.delenv("MONGO_DB", raising=False)
         s = Settings(
             TUSHARE_TOKEN="",
-            MINIMAX_API_KEY="",
+            LLM_API_KEY="",
             JWT_SECRET="test-secret-for-unit-test",
             _env_file=None,
         )
@@ -21,8 +21,8 @@ class TestSettings:
         assert s.REDIS_URL == "redis://localhost:6379/0"
         assert s.REDIS_MAX_CONNECTIONS == 100
         assert s.AKSHARE_ENABLED is True
-        assert s.MINIMAX_BASE_URL == "https://api.minimax.chat/v1"
-        assert s.MINIMAX_MODEL == "MiniMax-M2.7"
+        assert s.LLM_BASE_URL == ""
+        assert s.LLM_MODEL == ""
         assert s.CORS_ORIGINS == ["http://localhost:5173", "http://localhost:3000"]
         assert s.REALTIME_INTERVAL_SEC == 3
         assert s.DAILY_SYNC_HOUR == 15

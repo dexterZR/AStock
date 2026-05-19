@@ -13,7 +13,7 @@ async def sync_minute_quotes(symbol: str, period: str = "5"):
         if df is None or len(df) == 0:
             return
 
-        suffix = ".SH" if symbol.startswith(("6", "5", "9")) else ".SZ"
+        suffix = ".SH" if symbol.startswith(("6", "5")) else ".SZ"
         ts_code = f"{symbol}{suffix}"
         today = datetime.now().strftime("%Y%m%d")
 

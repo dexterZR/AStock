@@ -45,6 +45,20 @@ def register_exception_handlers(app):
             },
         )
 
+    @app.exception_handler(ConnectionError)
+    async def connection_error_handler(request: Request, exc: ConnectionError):
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4())[:12])
+        logger.warning(f"[{request_id}] 连接数超限: {exc}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "code": "SERVICE_UNAVAILABLE",
+                "message": str(exc),
+                "request_id": request_id,
+            },
+        )
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         request_id = getattr(request.state, "request_id", str(uuid.uuid4())[:12])

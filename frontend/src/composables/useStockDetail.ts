@@ -46,6 +46,7 @@ export function useStockDetail() {
       high: k.high,
       low: k.low,
       close: k.close,
+      pct_change: k.pct_change,
     }))
   )
 
@@ -79,6 +80,7 @@ export function useStockDetail() {
       { label: '最高', value: (p.high_price ?? p.high)?.toFixed(2) || '--', color: 'up' },
       { label: '最低', value: (p.low_price ?? p.low)?.toFixed(2) || '--', color: 'down' },
       { label: '昨收', value: (p.pre_close_price ?? p.pre_close)?.toFixed(2) || '--' },
+      { label: '涨跌幅', value: p.pct_change != null ? `${p.pct_change >= 0 ? '+' : ''}${p.pct_change.toFixed(2)}%` : '--', color: (p.pct_change ?? 0) >= 0 ? 'up' : 'down' },
       { label: '成交量', value: formatVol(p.volume) },
       { label: '成交额', value: formatAmt(p.amount) },
     ]

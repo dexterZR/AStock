@@ -16,10 +16,7 @@ export function useSSE(url: string) {
   function connect() {
     if (eventSource) return
 
-    const token = localStorage.getItem('astock_token')
-    const fullUrl = token ? `${url}?token=${token}` : url
-
-    eventSource = new EventSource(fullUrl)
+    eventSource = new EventSource(url)
 
     eventSource.onopen = () => {
       connected.value = true
@@ -51,11 +48,16 @@ export function useSSE(url: string) {
       eventSource?.close()
       eventSource = null
 
-      if (retryCount < maxRetries) {
-        retryCount++
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 30000)
-        reconnectTimer = setTimeout(connect, delay)
+      // 避免对认证失败无限重试
+      if (retryCount >= maxRetries) {
+        if (import.meta.env.DEV) {
+          console.warn('[SSE] 已达最大重试次数，停止重连')
+        }
+        return
       }
+      retryCount++
+      const delay = Math.min(1000 * Math.pow(2, retryCount), 30000)
+      reconnectTimer = setTimeout(connect, delay)
     }
   }
 

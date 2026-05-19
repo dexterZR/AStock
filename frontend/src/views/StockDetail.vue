@@ -73,8 +73,8 @@
         />
       </el-card>
 
-      <el-row :gutter="12" style="margin-top:16px;margin-bottom:16px">
-        <el-col :span="4" v-for="m in metrics" :key="m.label">
+      <el-row :gutter="8" style="margin-top:16px;margin-bottom:16px">
+        <el-col :span="3" v-for="m in metrics" :key="m.label">
           <div class="metric-card">
             <div class="met-label">{{ m.label }}</div>
             <div class="met-value price" :class="m.color">{{ m.value }}</div>

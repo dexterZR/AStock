@@ -7,6 +7,7 @@
       <div class="tt-row">高 <span class="tt-val up">{{ hoverInfo.high }}</span></div>
       <div class="tt-row">低 <span class="tt-val down">{{ hoverInfo.low }}</span></div>
       <div class="tt-row">收 <span class="tt-val" :class="hoverInfo.close >= hoverInfo.open ? 'up' : 'down'">{{ hoverInfo.close }}</span></div>
+      <div class="tt-row" v-if="hoverInfo.pctChange !== undefined">涨跌幅 <span class="tt-val" :class="hoverInfo.pctChange >= 0 ? 'up' : 'down'">{{ hoverInfo.pctChange >= 0 ? '+' : '' }}{{ hoverInfo.pctChange.toFixed(2) }}%</span></div>
       <div class="tt-row" v-if="hoverInfo.volume">量 <span class="tt-val">{{ formatVol(hoverInfo.volume) }}</span></div>
     </div>
   </div>
@@ -22,6 +23,7 @@ interface KlineBar {
   high: number
   low: number
   close: number
+  pct_change?: number
 }
 
 interface CostLine {
@@ -49,10 +51,11 @@ let volumeSeries: ISeriesApi<'Histogram'> | null = null
 let maSeriesMap: Map<string, ISeriesApi<'Line'>> = new Map()
 let resizeObserver: ResizeObserver | null = null
 let priceLines: any[] = []
+let pctChangeMap: Map<string, number> = new Map()
 
 const hoverInfo = ref({
   visible: false, x: 0, y: 0,
-  date: '', open: '', high: '', low: '', close: '', volume: 0,
+  date: '', open: '', high: '', low: '', close: '', pctChange: undefined as number | undefined, volume: 0,
 })
 
 const isDark = computed(() => document.documentElement.classList.contains('dark'))
@@ -147,6 +150,7 @@ function initChart() {
       high: candleData.high?.toFixed(2) || '--',
       low: candleData.low?.toFixed(2) || '--',
       close: candleData.close?.toFixed(2) || '--',
+      pctChange: pctChangeMap.get(String(param.time)),
       volume: volData?.value || 0,
     }
   })
@@ -182,7 +186,13 @@ function updateData() {
     high: d.high,
     low: d.low,
     close: d.close,
-  }))
+  } as any))
+  pctChangeMap.clear()
+  props.data.forEach(d => {
+    if (d.pct_change !== undefined) {
+      pctChangeMap.set(d.time, d.pct_change)
+    }
+  })
   candleSeries.setData(cData)
 
   if (volumeSeries && props.volumeData) {

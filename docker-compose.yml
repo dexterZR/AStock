@@ -8,6 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "27017:27017"
+    # ⚠️ 生产部署应移除端口映射或添加 MongoDB 密码认证
     volumes:
       - mongo_data:/data/db
     environment:
@@ -27,6 +28,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    # ⚠️ 生产部署应移除端口映射或添加 Redis 密码认证
     command: >
       redis-server
       --maxmemory 256mb
@@ -57,6 +59,11 @@ services:
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
     env_file:
+      # ⚠️ 安全说明：
+      # env_file 仅在容器运行时注入环境变量，不会写入镜像层。
+      # 生产环境应使用 .env.production 并确保文件权限 600：
+      #   chmod 600 .env.production
+      # 或在 CI/CD 管道中通过 secrets 管理平台注入。
       - ./backend/.env
     depends_on:
       mongo:
@@ -90,6 +97,28 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
+  # ====================
+  # Frontend (生产环境, Nginx)
+  # ====================
+  frontend-prod:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stock-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    volumes:
+      # 生产环境需要准备 SSL 证书：
+      #   mkdir -p ./certs && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      #     -keyout ./certs/server.key -out ./certs/server.crt -subj "/CN=localhost"
+      - ./certs:/etc/nginx/ssl:ro
+    profiles:
+      - production
 
 volumes:
   mongo_data:

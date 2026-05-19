@@ -60,6 +60,7 @@ class PortfolioService:
 
             avg_cost = h["total_cost"] / h["buy_shares"] if h["buy_shares"] > 0 else 0
             latest_price = latest["close"] if latest else 0
+            pct_change = latest.get("pct_change", 0) if latest else 0
             market_value = latest_price * h["total_shares"]
             remaining_cost = avg_cost * h["total_shares"]
             unrealized_pnl = market_value - remaining_cost
@@ -74,6 +75,7 @@ class PortfolioService:
                 "ts_code": ts_code,
                 "avg_cost": round(avg_cost, 3),
                 "latest_price": latest_price,
+                "pct_change": round(pct_change, 2) if pct_change else 0,
                 "market_value": round(market_value, 2),
                 "unrealized_pnl": round(unrealized_pnl, 2),
                 "unrealized_pnl_pct": round(unrealized_pct, 2),

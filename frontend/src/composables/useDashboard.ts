@@ -4,6 +4,12 @@ import request from '@/api/request'
 import type { MarketOverview, SectorRanking, SectorStock, MarketTemperature } from '@/types/market'
 import type { NewsItem, SentimentStats } from '@/types/news'
 
+function logError(context: string, error: unknown) {
+  if (import.meta.env.DEV) {
+    console.error(`[Dashboard] ${context}:`, error)
+  }
+}
+
 export function useDashboard() {
   const router = useRouter()
 
@@ -36,6 +42,9 @@ export function useDashboard() {
   const hasMoreNews = ref(true)
   const showNewsDetail = ref(false)
   const currentNews = ref<NewsItem | null>(null)
+
+  const alertNews = ref<NewsItem[]>([])
+  const alertNewsLoading = ref(false)
 
   // Computed
   const barUpWidth = computed(() => {
@@ -94,7 +103,7 @@ export function useDashboard() {
       const d: any = await request.get('/stocks/overview')
       if (d) overview.value = d
     } catch (e) {
-      console.error('[Dashboard] loadOverview failed:', e)
+      logError('loadOverview failed', e)
     }
     overviewLoading.value = false
   }
@@ -105,13 +114,13 @@ export function useDashboard() {
       const industry: any = await request.get('/sector/ranking')
       sectorRanking.value = industry || []
     } catch (e) {
-      console.error('[Dashboard] sector/ranking failed:', e)
+      logError('sector/ranking failed', e)
     }
     try {
       const extended: any = await request.get('/sector/market-overview-extended')
       extendedOverview.value = extended || { market_temperature: 0 }
     } catch (e) {
-      console.error('[Dashboard] sector/market-overview-extended failed:', e)
+      logError('market-overview-extended failed', e)
     }
     sectorsLoading.value = false
   }
@@ -130,7 +139,7 @@ export function useDashboard() {
       const res: any = await request.get(`/sector/cons/${encodeURIComponent(sectorName)}`)
       sectorStocks.value = (res && Array.isArray(res)) ? res : []
     } catch (e) {
-      console.error('[Dashboard] selectSector failed:', e)
+      logError('selectSector failed', e)
       sectorStocks.value = []
     } finally {
       sectorsLoading.value = false
@@ -162,7 +171,7 @@ export function useDashboard() {
       }
       discussion.value = msgs
     } catch (e) {
-      console.error('[Dashboard] runDiscussion failed:', e)
+      logError('runDiscussion failed', e)
       discussion.value = [{ role: 'error', agent: '系统', dimension: '', content: '讨论生成失败，请稍后重试' }]
     }
     discussing.value = false
@@ -173,7 +182,7 @@ export function useDashboard() {
       const h: any = await request.get('/portfolio/holdings')
       portfolio.value = h || []
     } catch (e) {
-      console.error('[Dashboard] loadPortfolio failed:', e)
+      logError('loadPortfolio failed', e)
     }
   }
 
@@ -182,7 +191,7 @@ export function useDashboard() {
       const a: any = await request.get('/portfolio/alerts?acknowledged=false')
       alerts.value = a || []
     } catch (e) {
-      console.error('[Dashboard] loadAlerts failed:', e)
+      logError('loadAlerts failed', e)
     }
   }
 
@@ -210,7 +219,7 @@ export function useDashboard() {
         hasMoreNews.value = false
       }
     } catch (e) {
-      console.error('[Dashboard] loadNews failed:', e)
+      logError('loadNews failed', e)
     } finally {
       newsLoading.value = false
     }
@@ -222,7 +231,7 @@ export function useDashboard() {
       const data: any = await request.get('/news/hot', { params: { limit: 8 } })
       hotNews.value = (data || []) as NewsItem[]
     } catch (e) {
-      console.error('[Dashboard] loadHotNews failed:', e)
+      logError('loadHotNews failed', e)
     } finally {
       hotNewsLoading.value = false
     }
@@ -239,6 +248,19 @@ export function useDashboard() {
     showNewsDetail.value = true
   }
 
+  async function loadAlertNews(tsCode: string) {
+    alertNewsLoading.value = true
+    alertNews.value = []
+    try {
+      const data: any = await request.get(`/news/stock/${tsCode}`, { params: { limit: 5 } })
+      alertNews.value = (data || []) as NewsItem[]
+    } catch (e) {
+      logError('loadAlertNews failed', e)
+    } finally {
+      alertNewsLoading.value = false
+    }
+  }
+
   function goToStock(code: string) {
     router.push({ path: '/stock', query: { code } })
   }
@@ -253,9 +275,10 @@ export function useDashboard() {
     portfolio, alerts,
     // News
     newsList, hotNews, newsTab, newsLoading, newsLoadingMore, hotNewsLoading, newsPage, hasMoreNews, showNewsDetail, currentNews, sentimentStats,
+    alertNews, alertNewsLoading,
     // Actions
     fmtAmt, loadOverview, loadSectorRankings, selectSector, autoSelectSector, runDiscussion,
     loadPortfolio, loadAlerts, loadNews, loadHotNews, loadMoreNews,
-    openNews, goToStock,
+    openNews, loadAlertNews, goToStock,
   }
 }

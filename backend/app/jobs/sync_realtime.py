@@ -15,7 +15,7 @@ async def sync_realtime_quotes(sse_manager: SSEManager):
             code = str(row.get("代码", ""))
             if not code:
                 continue
-            suffix = ".SH" if code.startswith(("6", "5", "9")) else ".SZ"
+            suffix = ".SH" if code.startswith(("6", "5")) else ".SZ"
             ts_code = f"{code}{suffix}"
 
             quote = {

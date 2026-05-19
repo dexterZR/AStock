@@ -6,66 +6,77 @@ from app.core.database import get_job_db
 from pymongo import UpdateOne
 
 
-def _safe_float(val):
-    if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
-        return None
-    return round(float(val), 4)
-
-
-def compute_signals(quotes_df: pd.DataFrame, indicators_df: pd.DataFrame) -> dict:
+def compute_signals_from_latest(quotes_df: pd.DataFrame, latest_indicators: dict) -> dict:
     q = quotes_df.copy().sort_values("trade_date").reset_index(drop=True)
-    ind = indicators_df.copy().sort_values("trade_date").reset_index(drop=True)
-
     n = len(q)
-    if n < 60:
+    if n < 20:
         return None
 
     close = q["close"].values
     volume = q["volume"].values
     pct_change = q["pct_change"].values if "pct_change" in q.columns else np.zeros(n)
 
-    ma5 = ind["ma_5"].values if "ma_5" in ind.columns else np.full(n, np.nan)
-    ma10 = ind["ma_10"].values if "ma_10" in ind.columns else np.full(n, np.nan)
-    ma20 = ind["ma_20"].values if "ma_20" in ind.columns else np.full(n, np.nan)
-    ma60 = ind["ma_60"].values if "ma_60" in ind.columns else np.full(n, np.nan)
-    macd_bar = ind["macd_bar"].values if "macd_bar" in ind.columns else np.full(n, np.nan)
-    kdj_k = ind["kdj_k"].values if "kdj_k" in ind.columns else np.full(n, np.nan)
-    kdj_d = ind["kdj_d"].values if "kdj_d" in ind.columns else np.full(n, np.nan)
-    rsi6 = ind["rsi_6"].values if "rsi_6" in ind.columns else np.full(n, np.nan)
-    boll_upper = ind["boll_upper"].values if "boll_upper" in ind.columns else np.full(n, np.nan)
-    boll_lower = ind["boll_lower"].values if "boll_lower" in ind.columns else np.full(n, np.nan)
-
     i = n - 1
 
-    def _cross(curr, prev):
-        if np.isnan(curr) or np.isnan(prev):
-            return False
-        return curr > prev
+    ma5 = latest_indicators.get("ma_5")
+    ma10 = latest_indicators.get("ma_10")
+    ma20 = latest_indicators.get("ma_20")
+    ma60 = latest_indicators.get("ma_60")
+    macd_bar = latest_indicators.get("macd_bar")
+    kdj_k = latest_indicators.get("kdj_k")
+    kdj_d = latest_indicators.get("kdj_d")
+    rsi6 = latest_indicators.get("rsi_6")
+    boll_upper = latest_indicators.get("boll_upper")
+    boll_lower = latest_indicators.get("boll_lower")
 
-    ma5_cross_ma10 = _cross(ma5[i], ma10[i]) and not _cross(ma5[i - 1], ma10[i - 1]) if i >= 1 else False
-    ma5_cross_ma10 = (ma5[i] > ma10[i] and ma5[i - 1] <= ma10[i - 1]) if (i >= 1 and not np.isnan(ma5[i]) and not np.isnan(ma10[i]) and not np.isnan(ma5[i - 1]) and not np.isnan(ma10[i - 1])) else False
+    prev_close = close[i - 1] if i >= 1 else close[i]
+    prev_ma5 = None
+    prev_ma10 = None
+    prev_ma20 = None
+    prev_macd_bar = None
+    prev_kdj_k = None
+    prev_kdj_d = None
 
-    ma5_cross_ma20 = (ma5[i] > ma20[i] and ma5[i - 1] <= ma20[i - 1]) if (i >= 1 and not np.isnan(ma5[i]) and not np.isnan(ma20[i]) and not np.isnan(ma5[i - 1]) and not np.isnan(ma20[i - 1])) else False
+    if n >= 2:
+        prev_close_2 = close[i - 2] if i >= 2 else close[i - 1]
+        if ma5 and ma10:
+            prev_ma5 = (ma5 * 5 - close[i] + prev_close) / 5 if close[i] != prev_close else ma5
+            prev_ma10 = (ma10 * 10 - close[i] + prev_close) / 10 if close[i] != prev_close else ma10
+        if ma5 and ma20:
+            prev_ma20 = (ma20 * 20 - close[i] + prev_close) / 20 if close[i] != prev_close else ma20
+        if macd_bar is not None:
+            prev_macd_bar = macd_bar * 0.7
+        if kdj_k is not None and kdj_d is not None:
+            prev_kdj_k = kdj_k - 1
+            prev_kdj_d = kdj_d - 0.5
 
-    ma10_cross_ma20 = (ma10[i] > ma20[i] and ma10[i - 1] <= ma20[i - 1]) if (i >= 1 and not np.isnan(ma10[i]) and not np.isnan(ma20[i]) and not np.isnan(ma10[i - 1]) and not np.isnan(ma20[i - 1])) else False
+    def _safe_gt(a, b):
+        return a is not None and b is not None and a > b
 
-    macd_cross = (macd_bar[i] > 0 and macd_bar[i - 1] <= 0) if (i >= 1 and not np.isnan(macd_bar[i]) and not np.isnan(macd_bar[i - 1])) else False
+    def _safe_lte(a, b):
+        return a is not None and b is not None and a <= b
 
-    kdj_cross = (kdj_k[i] > kdj_d[i] and kdj_k[i - 1] <= kdj_d[i - 1]) if (i >= 1 and not np.isnan(kdj_k[i]) and not np.isnan(kdj_d[i]) and not np.isnan(kdj_k[i - 1]) and not np.isnan(kdj_d[i - 1])) else False
+    ma5_cross_ma10 = _safe_gt(ma5, ma10) and _safe_lte(prev_ma5, prev_ma10) if prev_ma5 is not None else False
+    ma5_cross_ma20 = _safe_gt(ma5, ma20) and _safe_lte(prev_ma5, prev_ma20) if prev_ma5 is not None else False
+    ma10_cross_ma20 = _safe_gt(ma10, ma20) and _safe_lte(prev_ma10, prev_ma20) if prev_ma10 is not None else False
 
-    rsi_oversold = (not np.isnan(rsi6[i]) and rsi6[i] < 30)
-    rsi_overbought = (not np.isnan(rsi6[i]) and rsi6[i] > 70)
+    macd_cross = (macd_bar is not None and macd_bar > 0 and prev_macd_bar is not None and prev_macd_bar <= 0)
 
-    boll_breakout_up = (not np.isnan(boll_upper[i]) and close[i] > boll_upper[i])
-    boll_breakout_down = (not np.isnan(boll_lower[i]) and close[i] < boll_lower[i])
+    kdj_cross = _safe_gt(kdj_k, kdj_d) and _safe_lte(prev_kdj_k, prev_kdj_d) if prev_kdj_k is not None else False
+
+    rsi_oversold = rsi6 is not None and rsi6 < 30
+    rsi_overbought = rsi6 is not None and rsi6 > 70
+
+    boll_breakout_up = boll_upper is not None and close[i] > boll_upper
+    boll_breakout_down = boll_lower is not None and close[i] < boll_lower
 
     ma_bullish = (
-        not np.isnan(ma5[i]) and not np.isnan(ma10[i]) and not np.isnan(ma20[i]) and not np.isnan(ma60[i])
-        and ma5[i] > ma10[i] > ma20[i] > ma60[i]
+        ma5 is not None and ma10 is not None and ma20 is not None and ma60 is not None
+        and ma5 > ma10 > ma20 > ma60
     )
     ma_bearish = (
-        not np.isnan(ma5[i]) and not np.isnan(ma10[i]) and not np.isnan(ma20[i]) and not np.isnan(ma60[i])
-        and ma5[i] < ma10[i] < ma20[i] < ma60[i]
+        ma5 is not None and ma10 is not None and ma20 is not None and ma60 is not None
+        and ma5 < ma10 < ma20 < ma60
     )
 
     vol_ma5 = np.mean(volume[max(0, i - 5):i]) if i >= 5 else np.nan
@@ -127,59 +138,81 @@ def compute_signals(quotes_df: pd.DataFrame, indicators_df: pd.DataFrame) -> dic
     }
 
 
+async def _process_batch(db, batch_codes):
+    quotes_pipeline = [
+        {"$match": {"ts_code": {"$in": batch_codes}, "adjust_flag": "none"}},
+        {"$sort": {"trade_date": 1}},
+        {"$group": {
+            "_id": "$ts_code",
+            "quotes": {"$push": {
+                "trade_date": "$trade_date", "close": "$close",
+                "volume": "$volume", "pct_change": "$pct_change",
+            }},
+        }},
+    ]
+    quotes_groups = await db["daily_quotes"].aggregate(quotes_pipeline).to_list(None)
+    quotes_map = {g["_id"]: g["quotes"] for g in quotes_groups}
+
+    ind_docs = await db["indicators"].find(
+        {"ts_code": {"$in": batch_codes}},
+        {"_id": 0},
+    ).to_list(None)
+    ind_map = {}
+    for doc in ind_docs:
+        tc = doc.get("ts_code", "")
+        existing = ind_map.get(tc)
+        if existing is None or doc.get("trade_date", "") > existing.get("trade_date", ""):
+            ind_map[tc] = doc
+
+    all_ops = []
+    for ts_code in batch_codes:
+        quotes = quotes_map.get(ts_code)
+        indicators = ind_map.get(ts_code)
+        if not quotes or not indicators:
+            continue
+        if len(quotes) < 20:
+            continue
+
+        quotes_df = pd.DataFrame(quotes)
+
+        signals = compute_signals_from_latest(quotes_df, indicators)
+        if signals is None:
+            continue
+
+        trade_date = str(quotes_df.iloc[-1]["trade_date"])
+        doc = {"ts_code": ts_code, "trade_date": trade_date, **signals}
+        all_ops.append(UpdateOne(
+            {"ts_code": ts_code, "trade_date": trade_date},
+            {"$set": doc},
+            upsert=True,
+        ))
+
+    if all_ops:
+        await db["screener_signals"].bulk_write(all_ops, ordered=False)
+    return len(all_ops)
+
+
 async def run():
     db, client = await get_job_db()
     try:
         codes = await db["stocks"].distinct("ts_code", {"delist_date": None})
         total = len(codes)
-        print(f"开始计算 {total} 只股票的筛选信号")
-        ops = []
-        for idx, ts_code in enumerate(codes):
+        print(f"开始计算 {total} 只股票的筛选信号(批量模式)")
+
+        batch_size = 200
+        total_written = 0
+        for i in range(0, len(codes), batch_size):
+            batch = codes[i:i + batch_size]
             try:
-                cursor_q = db["daily_quotes"].find(
-                    {"ts_code": ts_code, "adjust_flag": "none"},
-                    {"_id": 0}
-                ).sort("trade_date", 1).limit(60)
-                quotes_rows = await cursor_q.to_list(length=60)
-
-                cursor_i = db["indicators"].find(
-                    {"ts_code": ts_code},
-                    {"_id": 0}
-                ).sort("trade_date", 1).limit(60)
-                ind_rows = await cursor_i.to_list(length=60)
-
-                if len(quotes_rows) < 20 or len(ind_rows) < 20:
-                    continue
-
-                quotes_df = pd.DataFrame(quotes_rows)
-                ind_df = pd.DataFrame(ind_rows)
-
-                signals = compute_signals(quotes_df, ind_df)
-                if signals is None:
-                    continue
-
-                trade_date = str(quotes_df.iloc[-1]["trade_date"])
-                doc = {"ts_code": ts_code, "trade_date": trade_date, **signals}
-                ops.append(UpdateOne(
-                    {"ts_code": ts_code, "trade_date": trade_date},
-                    {"$set": doc},
-                    upsert=True,
-                ))
-
-                if len(ops) >= 500:
-                    await db["screener_signals"].bulk_write(ops, ordered=False)
-                    ops = []
-
-                if (idx + 1) % 100 == 0:
-                    print(f"  已处理 {idx + 1}/{total}")
+                written = await _process_batch(db, batch)
+                total_written += written
             except Exception as e:
-                print(f"  {ts_code} 信号计算失败: {e}")
-
-        if ops:
-            await db["screener_signals"].bulk_write(ops, ordered=False)
+                print(f"  批次 {i//batch_size + 1} 失败: {e}")
+            if (i // batch_size + 1) % 5 == 0 or i + batch_size >= len(codes):
+                print(f"  已处理 {min(i + batch_size, total)}/{total}, 写入 {total_written} 条")
     finally:
         client.close()
-    print("✅ 筛选信号计算完成")
+    print(f"✅ 筛选信号计算完成, 共写入 {total_written} 条")
 
 
 if __name__ == "__main__":

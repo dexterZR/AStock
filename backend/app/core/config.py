@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     TUSHARE_TOKEN: str = ""
     AKSHARE_ENABLED: bool = True
 
-    MINIMAX_API_KEY: str = ""
-    MINIMAX_BASE_URL: str = "https://api.minimax.chat/v1"
-    MINIMAX_MODEL: str = "MiniMax-M2.7"
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""
+    LLM_MODEL: str = ""
 
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context):
         if self.JWT_SECRET == "change-me-in-production":
+            if not self.DEBUG:
+                raise RuntimeError(
+                    "JWT_SECRET 使用默认值，生产环境必须修改！请在 .env 或环境变量中设置 JWT_SECRET。"
+                )
             import warnings
             warnings.warn("\n⚠️  JWT_SECRET 使用默认值，生产环境请立即修改 .env 中的 JWT_SECRET！\n", stacklevel=2)
 

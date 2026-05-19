@@ -31,6 +31,7 @@ class EventService:
             "alert_level": "high" if event["severity"] == "critical" else "medium",
             "title": f"[{event['event_type']}] {event['title']}",
             "description": event["content"],
+            "source": event.get("source", ""),
             "triggered_at": datetime.now().isoformat(),
             "is_acknowledged": False,
             "related_event_id": str(event.get("_id", "")),
@@ -67,8 +68,32 @@ class EventService:
         query = {}
         if acknowledged is not None:
             query["is_acknowledged"] = acknowledged
-        cursor = self.db["risk_alerts"].find(query, {"_id": 0}).sort("triggered_at", -1)
-        return await cursor.to_list(None)
+        cursor = self.db["risk_alerts"].find(query).sort("triggered_at", -1)
+        alerts = await cursor.to_list(None)
+
+        missing_source = [a for a in alerts if not a.get("source") and a.get("related_event_id")]
+        if missing_source:
+            from bson import ObjectId
+            event_ids = []
+            for a in missing_source:
+                try:
+                    event_ids.append(ObjectId(a["related_event_id"]))
+                except Exception:
+                    pass
+            if event_ids:
+                events = await self.db["stock_events"].find(
+                    {"_id": {"$in": event_ids}}, {"source": 1}
+                ).to_list(None)
+                event_map = {str(e["_id"]): e.get("source", "") for e in events}
+                for a in missing_source:
+                    src = event_map.get(a["related_event_id"], "")
+                    if src:
+                        a["source"] = src
+
+        for a in alerts:
+            a["_id"] = str(a.get("_id", ""))
+
+        return alerts
 
     async def acknowledge_alert(self, alert_id: str):
         from bson import ObjectId

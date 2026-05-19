@@ -56,14 +56,14 @@ _LLM_CACHE_TTL = 300
 
 
 def _is_llm_available() -> bool:
-    return bool(getattr(settings, "MINIMAX_API_KEY", ""))
+    return bool(getattr(settings, "LLM_API_KEY", ""))
 
 
 def _get_llm_client():
     from openai import OpenAI
     return OpenAI(
-        api_key=settings.MINIMAX_API_KEY,
-        base_url=getattr(settings, "MINIMAX_BASE_URL", "https://api.minimax.chat/v1"),
+        api_key=settings.LLM_API_KEY,
+        base_url=getattr(settings, "LLM_BASE_URL", ""),
     )
 
 
@@ -123,7 +123,7 @@ async def _ai_analyze_news(news_list: list) -> list:
         response = await asyncio.wait_for(
             asyncio.to_thread(
                 client.chat.completions.create,
-                model=getattr(settings, "MINIMAX_MODEL", "MiniMax-M2.7"),
+                model=getattr(settings, "LLM_MODEL", ""),
                 messages=[
                     {"role": "system", "content": "你是专业A股财经分析师，只返回JSON。"},
                     {"role": "user", "content": prompt},

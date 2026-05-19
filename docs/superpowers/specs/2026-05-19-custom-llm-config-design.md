@@ -2,7 +2,7 @@
 
 ## 概述
 
-在设置页面新增 LLM 配置功能，允许用户自定义 OpenAI 兼容的 LLM 提供商（如 DeepSeek、通义千问、Ollama 等），替换当前硬编码的 MiniMax 配置。选股器 AI 功能将使用用户配置的 LLM 工作。
+在设置页面新增 LLM 配置功能，允许用户自定义 OpenAI 兼容的 LLM 提供商（如 DeepSeek、通义千问、Ollama 等），替换当前默认的 LLM 配置。选股器 AI 功能将使用用户配置的 LLM 工作。
 
 ## 方案选择
 
@@ -77,9 +77,9 @@ async def _get_llm_config(db) -> dict:
             "model": config["model"],
         }
     return {
-        "api_key": settings.MINIMAX_API_KEY,
-        "base_url": settings.MINIMAX_BASE_URL,
-        "model": settings.MINIMAX_MODEL,
+        "api_key": settings.LLM_API_KEY,
+        "base_url": settings.LLM_BASE_URL,
+        "model": settings.LLM_MODEL,
     }
 ```
 
@@ -146,7 +146,7 @@ export const llmConfigApi = {
 
 | 场景 | 处理方式 |
 |------|----------|
-| 数据库无 LLM 配置 | 回退到 `.env` 中的 `MINIMAX_*` 配置，前端显示"未配置自定义 LLM，使用默认" |
+| 数据库无 LLM 配置 | 回退到 `.env` 中的 `LLM_*` 配置，前端显示"未配置自定义 LLM，使用默认" |
 | API Key 为空 | `_is_llm_available()` 返回 false，AI 功能降级为纯关键词匹配 |
 | Base URL 不可达 | 测试连接返回错误提示，AI 调用失败时 catch 异常降级为关键词匹配 |
 | 保存时 API Key 未修改（仍是脱敏值） | 后端检测到脱敏格式时保留数据库中原有的 Key 不覆盖 |

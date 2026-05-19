@@ -4,11 +4,8 @@ from app.services.stock_service import StockService
 from app.repos.stock_repo import StockRepo
 from app.api.deps import get_db
 from motor.motor_asyncio import AsyncIOMotorDatabase
-import time
 
 router = APIRouter(prefix="/api/stocks", tags=["股票"])
-
-_overview_cache: dict = {"data": None, "ts": 0, "ttl": 120}
 
 
 async def get_stock_service(db: AsyncIOMotorDatabase = Depends(get_db)) -> StockService:
@@ -27,10 +24,11 @@ async def list_stocks(
 
 @router.get("/overview")
 async def market_overview(db: AsyncIOMotorDatabase = Depends(get_db)):
-    global _overview_cache
-    now = time.time()
-    if _overview_cache["data"] is not None and now - _overview_cache["ts"] < _overview_cache["ttl"]:
-        return BaseResponse(data=_overview_cache["data"])
+    stats = await db["market_stats"].find_one(
+        {}, {"_id": 0}, sort=[("trade_date", -1)]
+    )
+    if stats:
+        return BaseResponse(data=stats)
 
     latest = await db["daily_quotes"].find_one(
         {"adjust_flag": "none"},
@@ -44,27 +42,43 @@ async def market_overview(db: AsyncIOMotorDatabase = Depends(get_db)):
         })
 
     trade_date = latest["trade_date"]
-    docs = await db["daily_quotes"].find(
-        {"adjust_flag": "none", "trade_date": trade_date},
-        {"pct_change": 1, "close": 1, "amount": 1},
-    ).to_list(None)
-
-    up = sum(1 for d in docs if d.get("pct_change", 0) > 0)
-    down = sum(1 for d in docs if d.get("pct_change", 0) < 0)
-    flat = sum(1 for d in docs if d.get("pct_change", 0) == 0)
-    limit_up = sum(1 for d in docs if d.get("pct_change", 0) >= 9.9)
-    limit_down = sum(1 for d in docs if d.get("pct_change", 0) <= -9.9)
-    data = {
-        "total_stocks": len(docs), "up_count": up, "down_count": down, "flat_count": flat,
-        "limit_up_count": limit_up, "limit_down_count": limit_down, "turnover_total": round(sum(d.get("amount", 0) for d in docs) / 1e8, 2),
-    }
-    _overview_cache["data"] = data
-    _overview_cache["ts"] = now
+    pipeline = [
+        {"$match": {"adjust_flag": "none", "trade_date": trade_date}},
+        {"$group": {
+            "_id": None,
+            "total": {"$sum": 1},
+            "up": {"$sum": {"$cond": [{"$gt": ["$pct_change", 0]}, 1, 0]}},
+            "down": {"$sum": {"$cond": [{"$lt": ["$pct_change", 0]}, 1, 0]}},
+            "flat": {"$sum": {"$cond": [{"$eq": ["$pct_change", 0]}, 1, 0]}},
+            "limit_up": {"$sum": {"$cond": [{"$gte": ["$pct_change", 9.9]}, 1, 0]}},
+            "limit_down": {"$sum": {"$cond": [{"$lte": ["$pct_change", -9.9]}, 1, 0]}},
+            "total_amount": {"$sum": "$amount"},
+        }},
+    ]
+    result = await db["daily_quotes"].aggregate(pipeline).to_list(1)
+    if result:
+        r = result[0]
+        data = {
+            "trade_date": trade_date,
+            "total_stocks": r["total"], "up_count": r["up"], "down_count": r["down"],
+            "flat_count": r["flat"], "limit_up_count": r["limit_up"],
+            "limit_down_count": r["limit_down"], "turnover_total": round(r["total_amount"] / 1e8, 2),
+        }
+    else:
+        data = {"trade_date": trade_date, "total_stocks": 0, "up_count": 0,
+                "down_count": 0, "flat_count": 0, "limit_up_count": 0,
+                "limit_down_count": 0, "turnover_total": 0}
     return BaseResponse(data=data)
 
 
 @router.get("/top/up")
 async def top_up(limit: int = Query(10, ge=1, le=50), db: AsyncIOMotorDatabase = Depends(get_db)):
+    cached = await db["market_top"].find_one(
+        {"type": "up"}, {"_id": 0}, sort=[("trade_date", -1)]
+    )
+    if cached and cached.get("stocks"):
+        return BaseResponse(data=cached["stocks"][:limit])
+
     pipeline = [
         {"$match": {"adjust_flag": "none"}},
         {"$sort": {"trade_date": -1}},
@@ -77,7 +91,6 @@ async def top_up(limit: int = Query(10, ge=1, le=50), db: AsyncIOMotorDatabase =
     for d in docs:
         q = d["quote"]
         result.append({"ts_code": d["_id"], "name": "", "pct_change": q.get("pct_change", 0)})
-    # Fill names from stocks
     codes = [r["ts_code"] for r in result]
     names = await db["stocks"].find({"ts_code": {"$in": codes}}, {"name": 1, "ts_code": 1}).to_list(None)
     name_map = {n["ts_code"]: n.get("name", "") for n in names}
@@ -88,6 +101,12 @@ async def top_up(limit: int = Query(10, ge=1, le=50), db: AsyncIOMotorDatabase =
 
 @router.get("/top/down")
 async def top_down(limit: int = Query(10, ge=1, le=50), db: AsyncIOMotorDatabase = Depends(get_db)):
+    cached = await db["market_top"].find_one(
+        {"type": "down"}, {"_id": 0}, sort=[("trade_date", -1)]
+    )
+    if cached and cached.get("stocks"):
+        return BaseResponse(data=cached["stocks"][:limit])
+
     pipeline = [
         {"$match": {"adjust_flag": "none"}},
         {"$sort": {"trade_date": -1}},
@@ -118,7 +137,6 @@ async def search_stocks(
     return BaseResponse(data=data)
 
 
-# ===== 市场概览 & 涨跌榜 =====
 @router.get("/{ts_code}")
 async def get_stock(ts_code: str, service: StockService = Depends(get_stock_service)):
     data = await service.get_stock_detail(ts_code)

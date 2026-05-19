@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.models.response import BaseResponse
-from app.models.screener import ScreenerRequest, AIParseRequest, AIPickRequest, AIAnalyzeRequest
+from app.models.screener import ScreenerRequest, AIParseRequest, AIPickRequest, AIAnalyzeRequest, AIChatRequest
 from app.services.screener_service import ScreenerService
 from app.services.screener_ai_service import ScreenerAIService
 from app.api.deps import get_db
@@ -74,4 +74,13 @@ async def ai_daily(
     ai_service: ScreenerAIService = Depends(get_ai_service),
 ):
     data = await ai_service.get_daily_recommendation()
+    return BaseResponse(data=data)
+
+
+@router.post("/ai-chat")
+async def ai_chat(
+    req: AIChatRequest,
+    ai_service: ScreenerAIService = Depends(get_ai_service),
+):
+    data = await ai_service.ai_chat(req.query, req.history)
     return BaseResponse(data=data)

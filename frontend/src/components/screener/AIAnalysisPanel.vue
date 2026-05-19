@@ -1,7 +1,13 @@
 <template>
-  <div v-if="analysisData || hasResults" class="ai-analysis">
+  <div v-if="analyzing || analysisData || hasResults" class="ai-analysis">
     <el-divider />
-    <template v-if="analysisData">
+    <template v-if="analyzing && !analysisData">
+      <div class="analysis-loading">
+        <el-icon class="loading-spin"><Loading /></el-icon>
+        <span>AI 正在分析筛选结果…</span>
+      </div>
+    </template>
+    <template v-else-if="analysisData">
       <div class="analysis-header">
         <span class="analysis-title">🤖 AI分析结果</span>
         <el-tag v-if="avgScore > 0" :type="avgScore >= 60 ? 'danger' : avgScore >= 40 ? 'warning' : 'success'">
@@ -11,7 +17,7 @@
       <div v-if="analysisData.overview" class="analysis-overview">{{ analysisData.overview }}</div>
       <el-row :gutter="12">
         <el-col :span="8" v-for="item in analysisData.stocks?.slice(0, 6)" :key="item.ts_code">
-          <div class="analysis-card" :style="{ borderLeftColor: item.verdict?.color || '#999' }">
+          <div class="analysis-card" :style="{ borderLeftColor: item.verdict?.color || '#999', cursor: 'pointer' }" @click="goStock(item.ts_code)">
             <div class="analysis-card-header">
               <div>
                 <strong>{{ item.name }}</strong>
@@ -54,10 +60,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Loading } from '@element-plus/icons-vue'
+
+const emit = defineEmits<{
+  (e: 'go-stock', tsCode: string): void
+}>()
 
 const props = defineProps<{
   analysisData: any
   hasResults?: boolean
+  analyzing?: boolean
 }>()
 
 const avgScore = computed(() => {
@@ -70,6 +82,10 @@ function getProgressColor(score?: number) {
   if (score >= 70) return '#dc2626'
   if (score >= 50) return '#d97706'
   return '#16a34a'
+}
+
+function goStock(tsCode: string) {
+  emit('go-stock', tsCode)
 }
 </script>
 
@@ -166,5 +182,23 @@ function getProgressColor(score?: number) {
 }
 .placeholder-icon {
   font-size: 18px;
+}
+.analysis-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+  color: var(--claude-accent);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+.loading-spin {
+  animation: spin 1s linear infinite;
+  font-size: 18px;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

@@ -1,55 +1,12 @@
 <template>
   <div class="screener">
-    <AIInput
-      @parsed="onAIParsed"
-      @picked="onAIPicked"
+    <AIChat
+      @apply-conditions="onAIApplyConditions"
+      @view-stocks="onAIViewStocks"
       @daily="onAIDaily"
     />
 
-    <StrategyTemplates />
-
     <ConditionBuilder />
-
-    <div class="ai-info-bar" v-if="screenerStore.aiExplanation || screenerStore.aiParsedConditions.length > 0 || screenerStore.aiMatchedIndustryGroups.length > 0">
-      <div class="ai-info-left">
-        <span class="ai-info-source">
-          {{ screenerStore.aiSource === 'llm' ? '🤖 MiniMax AI' : '🔑 关键词匹配' }}
-        </span>
-        <span class="ai-info-explanation" v-if="screenerStore.aiExplanation">
-          {{ screenerStore.aiExplanation }}
-        </span>
-      </div>
-      <div class="ai-info-tags">
-        <el-tag
-          v-for="(ind, idx) in screenerStore.aiMatchedIndustryGroups"
-          :key="'ind-' + idx"
-          size="small"
-          type="warning"
-          closable
-          @close="removeAIIndustryGroup(idx)"
-          class="ai-tag"
-        >
-          🏭 {{ ind }}
-        </el-tag>
-        <el-tag
-          v-for="(cond, idx) in screenerStore.aiParsedConditions"
-          :key="'cond-' + idx"
-          size="small"
-          :type="getCondTagType(cond.category)"
-          closable
-          @close="removeAICondition(idx)"
-          class="ai-tag"
-        >
-          {{ getCondLabel(cond) }}
-        </el-tag>
-        <el-button size="small" text type="primary" @click="applyAIConditions" class="ai-apply-btn">
-          📋 应用到条件编辑器
-        </el-button>
-        <el-button size="small" text @click="screenerStore.clearAIState()" class="ai-clear-btn">
-          ✕ 清除
-        </el-button>
-      </div>
-    </div>
 
     <div class="result-section">
       <div class="result-header">
@@ -71,9 +28,6 @@
             <el-button size="small" @click="runAIAnalysis" :loading="analyzing" class="action-btn ai-btn">
               🤖 AI解读
             </el-button>
-            <el-button size="small" @click="compareSelected" :disabled="selectedRows.length < 2" class="action-btn">
-              ⚖️ 对比 ({{ selectedRows.length }})
-            </el-button>
             <el-button size="small" @click="exportCSV" :disabled="screenerStore.results.length === 0" class="action-btn">
               📥 导出CSV
             </el-button>
@@ -83,7 +37,6 @@
 
       <ResultTable
         v-if="screenerStore.viewMode === 'table'"
-        @selection-change="onSelectionChange"
         @go-stock="goToStock"
       />
       <ResultCards
@@ -97,22 +50,8 @@
         <el-empty description="热力图视图开发中，敬请期待" :image-size="60" />
       </div>
 
-      <AIAnalysisPanel :analysis-data="analysisData" :has-results="screenerStore.results.length > 0" />
+      <AIAnalysisPanel :analysis-data="analysisData" :has-results="screenerStore.results.length > 0" :analyzing="analyzing" @go-stock="goToStock" />
     </div>
-
-    <el-dialog v-model="showCompare" title="⚖️ 股票对比" width="900px">
-      <el-table :data="compareData" border size="small" v-loading="compareLoading">
-        <el-table-column prop="label" label="指标" width="120" fixed />
-        <el-table-column v-for="stock in compareStocks" :key="stock.ts_code" :label="stock.name">
-          <template #default="scope">
-            <span :style="getCompareStyle(scope.row, stock.ts_code)">{{ scope.row[stock.ts_code] || '--' }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="showCompare = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <el-dialog v-model="showAIDaily" title="📡 今日AI推荐" width="800px">
       <div v-if="screenerStore.aiDaily" class="ai-daily-content">
@@ -147,14 +86,12 @@ import { useRouter } from 'vue-router'
 import { useScreenerStore } from '@/stores/screenerStore'
 import { screenerApi } from '@/api/modules/screener'
 import { ElMessage } from 'element-plus'
-import AIInput from '@/components/screener/AIInput.vue'
-import StrategyTemplates from '@/components/screener/StrategyTemplates.vue'
+import AIChat from '@/components/screener/AIChat.vue'
 import ConditionBuilder from '@/components/screener/ConditionBuilder.vue'
 import ResultTable from '@/components/screener/ResultTable.vue'
 import ResultCards from '@/components/screener/ResultCards.vue'
 import AIAnalysisPanel from '@/components/screener/AIAnalysisPanel.vue'
 import type { ScreenerCondition } from '@/types/screener'
-import { CONDITION_OPTIONS } from '@/types/screener'
 
 defineOptions({ name: 'Screener' })
 
@@ -163,11 +100,6 @@ const screenerStore = useScreenerStore()
 
 const analysisData = ref<any>(null)
 const analyzing = ref(false)
-const selectedRows = ref<any[]>([])
-const showCompare = ref(false)
-const compareLoading = ref(false)
-const compareStocks = ref<any[]>([])
-const compareData = ref<Array<{ label: string; [key: string]: any }>>([])
 const showAIDaily = ref(false)
 
 const viewModes = [
@@ -177,78 +109,32 @@ const viewModes = [
   { mode: 'heatmap' as const, icon: '🗺️', label: '热力图', disabled: true },
 ]
 
-function onAIParsed(data: any) {
-  const conds: ScreenerCondition[] = [...(data.conditions || [])]
-  const industries: string[] = data.matched_industries || []
-  if (industries.length > 0) {
-    conds.push({ category: 'quote', field: 'industry', op: 'in_', values: industries })
+function onAIApplyConditions(conditions: any[], industries: string[]) {
+  const allConditions: ScreenerCondition[] = [...(conditions || [])]
+  if (industries && industries.length > 0) {
+    allConditions.push({ category: 'quote', field: 'industry', op: 'in_', values: industries })
   }
-  screenerStore.conditions = conds
-  screenerStore.executeScreener()
+  if (allConditions.length > 0) {
+    screenerStore.conditions = allConditions
+    screenerStore.aiParsedConditions = conditions || []
+    screenerStore.aiMatchedIndustries = industries || []
+    screenerStore.executeScreener()
+    ElMessage.success(`已应用 ${allConditions.length} 个筛选条件`)
+  } else {
+    ElMessage.info('没有条件可应用')
+  }
 }
 
-function onAIPicked(data: any) {
-  if (data.stocks) {
-    screenerStore.results = data.stocks
-    ElMessage.success(`AI选出 ${data.stocks.length} 只股票`)
+function onAIViewStocks(stocks: any[]) {
+  if (stocks && stocks.length > 0) {
+    screenerStore.results = stocks
+    ElMessage.success(`找到 ${stocks.length} 只股票`)
+    runAIAnalysis()
   }
 }
 
 function onAIDaily() {
   showAIDaily.value = true
-}
-
-function removeAIIndustryGroup(idx: number) {
-  screenerStore.aiMatchedIndustryGroups.splice(idx, 1)
-  screenerStore.aiMatchedIndustries = []
-}
-
-function removeAICondition(idx: number) {
-  screenerStore.aiParsedConditions.splice(idx, 1)
-}
-
-function applyAIConditions() {
-  const conds = [...screenerStore.aiParsedConditions]
-  const industries = screenerStore.aiMatchedIndustries
-  if (industries.length > 0) {
-    conds.push({ category: 'quote', field: 'industry', op: 'in_', values: industries })
-  }
-  screenerStore.conditions = conds
-  screenerStore.executeScreener()
-}
-
-function getCondTagType(category: string): '' | 'success' | 'warning' | 'danger' | 'info' {
-  const map: Record<string, '' | 'success' | 'warning' | 'danger' | 'info'> = {
-    technical: '', fundamental: 'success', pattern: 'info', capital: 'warning', quote: 'info',
-  }
-  return map[category] || 'info'
-}
-
-function getCondLabel(cond: ScreenerCondition): string {
-  if (cond.field === 'industry') {
-    const vals = cond.values || (Array.isArray(cond.value) ? cond.value : cond.value ? [cond.value] : [])
-    return `🏭 ${vals.join('、')}`
-  }
-  const options = CONDITION_OPTIONS[cond.category as keyof typeof CONDITION_OPTIONS]
-  if (options) {
-    const found = options.find(o => o.field === cond.field)
-    if (found) {
-      let label = found.label
-      if (cond.op === 'range' && cond.min != null && cond.max != null) {
-        label += ` ${cond.min}~${cond.max}`
-      } else if (cond.op === 'gt' && cond.value != null) {
-        label += ` >${cond.value}`
-      } else if (cond.op === 'lt' && cond.value != null) {
-        label += ` <${cond.value}`
-      } else if (cond.op === 'gte' && cond.value != null) {
-        label += ` ≥${cond.value}`
-      } else if (cond.op === 'eq' && cond.value === true) {
-        label = '✓ ' + label
-      }
-      return label
-    }
-  }
-  return `${cond.field} ${cond.op} ${cond.value ?? ''}`
 }
 
 async function runAIAnalysis() {
@@ -272,10 +158,6 @@ function goToStock(ts_code: string) {
   router.push({ path: '/stock', query: { code: ts_code } })
 }
 
-function onSelectionChange(rows: any[]) {
-  selectedRows.value = rows
-}
-
 function exportCSV() {
   const results = screenerStore.results
   if (!results.length) return
@@ -295,103 +177,9 @@ function exportCSV() {
   URL.revokeObjectURL(url)
   ElMessage.success(`已导出 ${results.length} 条记录`)
 }
-
-async function compareSelected() {
-  if (selectedRows.value.length < 2) {
-    ElMessage.warning('请至少选择2只股票进行对比')
-    return
-  }
-  showCompare.value = true
-  compareLoading.value = true
-  compareStocks.value = selectedRows.value.slice(0, 5)
-  try {
-    const codes = compareStocks.value.map(s => s.ts_code)
-    const data: any = await screenerApi.aiAnalyze(codes)
-    const results = data?.stocks || []
-    const rows: Array<{ label: string; [key: string]: any }> = [
-      { label: '综合评分' },
-      { label: '技术面评分' },
-      { label: '基本面评分' },
-      { label: '催化剂评分' },
-      { label: '操作建议' },
-    ]
-    for (const r of results) {
-      const code = r.ts_code
-      rows[0][code] = r.total_score + '分'
-      rows[1][code] = r.technical?.score + '分'
-      rows[2][code] = r.fundamental?.score + '分'
-      rows[3][code] = r.catalyst?.score + '分'
-      rows[4][code] = r.verdict?.action || '--'
-    }
-    compareData.value = rows
-  } catch {
-    ElMessage.error('对比分析失败')
-  }
-  compareLoading.value = false
-}
-
-function getCompareStyle(row: { label: string; [key: string]: any }, tsCode: string) {
-  const val = row[tsCode]
-  if (typeof val === 'string' && val.endsWith('%')) {
-    const num = parseFloat(val)
-    if (num > 0) return { color: 'var(--color-up)', fontWeight: 600 }
-    if (num < 0) return { color: 'var(--color-down)', fontWeight: 600 }
-  }
-  return {}
-}
 </script>
 
 <style scoped>
-.ai-info-bar {
-  background: var(--claude-card);
-  border: 1px solid var(--claude-border);
-  border-left: 3px solid var(--claude-accent);
-  border-radius: var(--radius-md);
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ai-info-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.ai-info-source {
-  background: var(--claude-accent);
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-sans);
-  white-space: nowrap;
-}
-.ai-info-explanation {
-  font-size: 13px;
-  color: var(--claude-text);
-  font-family: var(--font-sans);
-}
-.ai-info-tags {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.ai-tag {
-  font-family: var(--font-sans);
-}
-.ai-apply-btn {
-  font-family: var(--font-sans);
-  font-size: 12px;
-}
-.ai-clear-btn {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  color: var(--claude-text-tertiary) !important;
-}
 .result-section {
   background: var(--claude-card);
   border: 1px solid var(--claude-border);

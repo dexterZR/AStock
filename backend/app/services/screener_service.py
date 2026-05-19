@@ -51,22 +51,11 @@ STRATEGY_TEMPLATES = [
         id="volume_attack",
         name="放量上攻",
         icon="🔥",
-        description="换手率超5%，涨幅超3%，主力资金净买入",
+        description="换手率超5%，涨幅超3%，成交量放大",
         conditions=[
             ScreenerCondition(category="quote", field="turnover_rate", op="gt", value=5),
             ScreenerCondition(category="quote", field="pct_change", op="gt", value=3),
-            ScreenerCondition(category="capital", field="main_net_buy", op="gt", value=0),
-        ]
-    ),
-    StrategyTemplate(
-        id="north_buy",
-        name="北向加仓",
-        icon="🏦",
-        description="北向资金增持，PE低于30，均线多头排列",
-        conditions=[
-            ScreenerCondition(category="capital", field="north_holding_change", op="gt", value=0),
-            ScreenerCondition(category="fundamental", field="pe", op="range", min=0, max=30),
-            ScreenerCondition(category="technical", field="ma_bullish", op="eq", value=True),
+            ScreenerCondition(category="technical", field="volume_surge", op="eq", value=True),
         ]
     ),
 ]

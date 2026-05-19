@@ -53,6 +53,7 @@ import { ref, onMounted, computed } from 'vue'
 import request from '@/api/request'
 import { useRoutineStore } from '@/stores/routineStore'
 import { ElMessage } from 'element-plus'
+import DOMPurify from 'dompurify'
 
 const routineStore = useRoutineStore()
 const holdings = ref<any[]>([])
@@ -64,7 +65,7 @@ const runningId = ref('')
 
 const renderedReport = computed(() => {
   if (!currentReport.value) return ''
-  return currentReport.value
+  const html = currentReport.value
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^- (.+)$/gm, '• $1')
@@ -72,6 +73,7 @@ const renderedReport = computed(() => {
     .replace(/\n/g, '<br>')
     .replace(/---/g, '<hr>')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  return DOMPurify.sanitize(html)
 })
 
 function formatTime(t: string) { return new Date(t).toLocaleString() }

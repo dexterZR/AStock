@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 import asyncio
 from datetime import datetime, timedelta
 import bcrypt, jwt
@@ -28,8 +28,14 @@ class RegisterRequest(BaseModel):
     @field_validator('password')
     @classmethod
     def password_strong(cls, v: str) -> str:
-        if len(v) < 4:
-            raise ValueError('密码至少4个字符')
+        if len(v) < 8:
+            raise ValueError('密码至少8个字符')
+        if not any(c.isupper() for c in v):
+            raise ValueError('密码需包含至少一个大写字母')
+        if not any(c.islower() for c in v):
+            raise ValueError('密码需包含至少一个小写字母')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('密码需包含至少一个数字')
         return v
 
 
@@ -59,7 +65,7 @@ async def register(body: RegisterRequest, db: AsyncIOMotorDatabase = Depends(get
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
+async def login(body: LoginRequest, response: Response, db: AsyncIOMotorDatabase = Depends(get_db)):
     user = await db["users"].find_one({"username": body.username.strip()})
     if not user or not await asyncio.to_thread(bcrypt.checkpw, body.password.encode(), user["password"].encode()):
         raise HTTPException(401, "用户名或密码错误")
@@ -69,4 +75,13 @@ async def login(body: LoginRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
         "exp": datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRE_HOURS),
     }
     token = jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+    # 设置 httpOnly Cookie 用于 SSE 等不支持自定义 Header 的场景
+    response.set_cookie(
+        key="astock_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.JWT_EXPIRE_HOURS * 3600,
+        path="/",
+    )
     return TokenResponse(access_token=token, username=body.username.strip())

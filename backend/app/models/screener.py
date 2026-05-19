@@ -3,7 +3,7 @@ from typing import Optional, List, Literal, Any
 
 
 class ScreenerCondition(BaseModel):
-    category: Literal["technical", "fundamental", "pattern", "capital", "quote"]
+    category: Literal["technical", "fundamental", "pattern", "quote"]
     field: str
     op: Literal["eq", "gt", "gte", "lt", "lte", "range", "in_"]
     value: Optional[Any] = None
@@ -27,6 +27,19 @@ class AIPickRequest(BaseModel):
 
 class AIAnalyzeRequest(BaseModel):
     ts_codes: List[str]
+
+
+class AIChatRequest(BaseModel):
+    query: str
+    history: List[dict] = []
+
+
+class AIChatResponse(BaseModel):
+    text: str
+    conditions: List[dict] = []
+    industries: List[str] = []
+    stocks: List[dict] = []
+    stock_count: int = 0
 
 
 class StrategyTemplate(BaseModel):
@@ -74,12 +87,3 @@ class FundamentalData(BaseModel):
     total_mv: Optional[float] = None
     circ_mv: Optional[float] = None
 
-
-class CapitalFlowData(BaseModel):
-    ts_code: str
-    trade_date: str
-    main_net_buy: Optional[float] = None
-    big_net_buy: Optional[float] = None
-    north_holding_change: Optional[float] = None
-    industry: Optional[str] = None
-    sector_net_amount: Optional[float] = None

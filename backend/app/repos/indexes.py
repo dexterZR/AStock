@@ -21,9 +21,40 @@ async def create_indexes(db: AsyncIOMotorDatabase):
         [("adjust_flag", 1), ("trade_date", -1)], name="idx_adjust_date"
     )
 
+    # screener_signals
+    await db["screener_signals"].create_index(
+        [("ts_code", 1), ("trade_date", -1)], name="idx_signal_code_date"
+    )
+
+    # fundamentals
+    await db["fundamentals"].create_index(
+        [("ts_code", 1), ("trade_date", -1)], name="idx_fund_code_date"
+    )
+
     # indicators
     await db["indicators"].create_index(
         [("ts_code", 1), ("trade_date", -1)], unique=True, name="idx_ind_code_date"
+    )
+
+    # screener_snapshot
+    await db["screener_snapshot"].create_index(
+        [("ts_code", 1), ("snapshot_date", -1)], unique=True, name="idx_snapshot_code_date"
+    )
+    await db["screener_snapshot"].create_index(
+        [("snapshot_date", -1)], name="idx_snapshot_date"
+    )
+    await db["screener_snapshot"].create_index(
+        [("snapshot_date", -1), ("total_mv", -1)], name="idx_snapshot_date_mv"
+    )
+
+    # market_stats
+    await db["market_stats"].create_index(
+        [("trade_date", -1)], name="idx_stats_date"
+    )
+
+    # market_top
+    await db["market_top"].create_index(
+        [("type", 1), ("trade_date", -1)], name="idx_top_type_date"
     )
 
     # minute_quotes

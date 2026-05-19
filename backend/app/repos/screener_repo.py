@@ -2,16 +2,83 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import List, Dict, Optional
 from app.models.screener import ScreenerCondition
 
+_PRE_FILTER_LIMIT = 500
+
 
 class ScreenerRepo:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
 
+    async def _get_latest_snapshot_date(self):
+        doc = await self.db["screener_snapshot"].find_one(
+            {}, {"snapshot_date": 1}, sort=[("snapshot_date", -1)]
+        )
+        return doc["snapshot_date"] if doc else None
+
     async def screen_with_conditions(self, conditions: List[ScreenerCondition], limit: int = 50) -> List[dict]:
+        snapshot_date = await self._get_latest_snapshot_date()
+        if snapshot_date:
+            return await self._screen_via_snapshot(conditions, limit, snapshot_date)
+        return await self._screen_via_pipeline(conditions, limit)
+
+    async def _screen_via_snapshot(self, conditions: List[ScreenerCondition], limit: int, snapshot_date: str) -> List[dict]:
+        match = {"snapshot_date": snapshot_date}
+
+        for c in conditions:
+            if c.category in ("technical", "pattern"):
+                if c.op == "eq":
+                    match[f"signals.{c.field}"] = c.value
+            elif c.category == "fundamental":
+                self._apply_condition(match, c.field, c)
+            elif c.category == "quote":
+                if c.field == "industry":
+                    if c.op == "eq" and c.value:
+                        match["industry"] = {"$regex": c.value, "$options": "i"}
+                    elif c.op == "in_" and c.values:
+                        match["industry"] = {"$in": c.values}
+                    elif c.op == "in_" and isinstance(c.value, list):
+                        match["industry"] = {"$in": c.value}
+                    continue
+                self._apply_condition(match, c.field, c)
+
+        pipeline = [{"$match": match}]
+        pipeline.append({"$sort": {"total_mv": -1, "pct_change": -1}})
+        pipeline.append({"$limit": limit})
+        pipeline.append({"$project": {
+            "_id": 0,
+            "ts_code": 1, "name": 1, "industry": 1, "market": 1,
+            "close": 1, "pct_change": 1, "turnover_rate": 1,
+            "volume": 1, "amount": 1,
+            "pe": 1, "pb": 1, "roe": 1, "total_mv": 1,
+            "signals": 1,
+        }})
+
+        cursor = self.db["screener_snapshot"].aggregate(pipeline, maxTimeMS=5000)
+        return await cursor.to_list(length=limit)
+
+    def _apply_condition(self, match: dict, field: str, c: ScreenerCondition):
+        if c.op == "range":
+            rng = {}
+            if c.min is not None:
+                rng["$gte"] = c.min
+            if c.max is not None:
+                rng["$lte"] = c.max
+            match[field] = rng
+        elif c.op == "gt":
+            match[field] = {"$gt": c.value}
+        elif c.op == "lt":
+            match[field] = {"$lt": c.value}
+        elif c.op == "gte":
+            match[field] = {"$gte": c.value}
+        elif c.op == "lte":
+            match[field] = {"$lte": c.value}
+        elif c.op == "eq":
+            match[field] = c.value
+
+    async def _screen_via_pipeline(self, conditions: List[ScreenerCondition], limit: int) -> List[dict]:
         pipeline = []
         match_signal = {}
         match_fundamental = {}
-        match_capital = {}
         match_quote = {}
         match_stock = {}
 
@@ -36,19 +103,6 @@ class ScreenerRepo:
                     match_fundamental[field_path] = {"$gte": c.value}
                 elif c.op == "lte":
                     match_fundamental[field_path] = {"$lte": c.value}
-            elif c.category == "capital":
-                field_path = c.field
-                if c.op == "range":
-                    rng = {}
-                    if c.min is not None:
-                        rng["$gte"] = c.min
-                    if c.max is not None:
-                        rng["$lte"] = c.max
-                    match_capital[field_path] = rng
-                elif c.op == "gt":
-                    match_capital[field_path] = {"$gt": c.value}
-                elif c.op == "lt":
-                    match_capital[field_path] = {"$lt": c.value}
             elif c.category == "quote":
                 if c.field == "industry":
                     if c.op == "eq" and c.value:
@@ -83,8 +137,19 @@ class ScreenerRepo:
                     match_quote[field_path] = {"$lte": c.value}
                 elif c.op == "eq":
                     match_quote[field_path] = c.value
-            elif c.category == "technical" or c.category == "pattern":
-                pass
+
+        if match_stock.get("industry", {}).get("$in"):
+            industry_list = match_stock["industry"]["$in"]
+            if industry_list:
+                codes_cursor = self.db["stocks"].find(
+                    {"industry": {"$in": industry_list}},
+                    {"ts_code": 1, "_id": 0},
+                ).limit(_PRE_FILTER_LIMIT)
+                codes = await codes_cursor.to_list(length=_PRE_FILTER_LIMIT)
+                if codes:
+                    match_stock = {"ts_code": {"$in": [c["ts_code"] for c in codes]}}
+                else:
+                    return []
 
         if match_stock:
             pipeline.append({"$match": match_stock})
@@ -147,7 +212,7 @@ class ScreenerRepo:
                 "pipeline": [
                     {"$match": {"$expr": {"$eq": ["$ts_code", "$$code"]}}},
                     {"$sort": {"trade_date": -1}},
-                    {"$limit": 2},
+                    {"$limit": 10},
                 ],
                 "as": "fundamentals_arr",
             }
@@ -163,7 +228,13 @@ class ScreenerRepo:
                         "pe": {"$ifNull": ["$$latest.pe", {"$ifNull": ["$$prev.pe", None]}]},
                         "pb": {"$ifNull": ["$$latest.pb", {"$ifNull": ["$$prev.pb", None]}]},
                         "roe": {"$ifNull": ["$$latest.roe", {"$ifNull": ["$$prev.roe", None]}]},
-                        "total_mv": {"$ifNull": ["$$latest.total_mv", {"$ifNull": ["$$prev.total_mv", None]}]},
+                        "total_mv": {
+                            "$reduce": {
+                                "input": "$fundamentals_arr",
+                                "initialValue": None,
+                                "in": {"$ifNull": ["$$this.total_mv", "$$value"]},
+                            }
+                        },
                         "circ_mv": {"$ifNull": ["$$latest.circ_mv", {"$ifNull": ["$$prev.circ_mv", None]}]},
                         "dividend_yield": {"$ifNull": ["$$latest.dividend_yield", {"$ifNull": ["$$prev.dividend_yield", None]}]},
                     }
@@ -173,21 +244,6 @@ class ScreenerRepo:
         pipeline.append({"$unset": "fundamentals_arr"})
         pipeline.append({"$unwind": {"path": "$fundamental", "preserveNullAndEmptyArrays": True}})
 
-        pipeline.append({
-            "$lookup": {
-                "from": "capital_flow",
-                "let": {"code": "$ts_code"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$eq": ["$ts_code", "$$code"]}}},
-                    {"$sort": {"trade_date": -1}},
-                    {"$limit": 1},
-                    {"$project": {"_id": 0}},
-                ],
-                "as": "capital",
-            }
-        })
-        pipeline.append({"$unwind": {"path": "$capital", "preserveNullAndEmptyArrays": True}})
-
         match_final = {}
         if match_signal:
             for k, v in match_signal.items():
@@ -195,22 +251,20 @@ class ScreenerRepo:
         if match_fundamental:
             for k, v in match_fundamental.items():
                 match_final[f"fundamental.{k}"] = v
-        if match_capital:
-            for k, v in match_capital.items():
-                match_final[f"capital.{k}"] = v
         if match_quote:
             match_final.update(match_quote)
 
         if match_final:
             pipeline.append({"$match": match_final})
 
+        pipeline.append({"$sort": {
+            "fundamental.total_mv": -1,
+            "quote.pct_change": -1,
+        }})
         pipeline.append({"$limit": limit})
         pipeline.append({"$project": {
             "_id": 0,
-            "ts_code": 1,
-            "name": 1,
-            "industry": 1,
-            "market": 1,
+            "ts_code": 1, "name": 1, "industry": 1, "market": 1,
             "close": {"$ifNull": ["$quote.close", None]},
             "pct_change": {"$ifNull": ["$quote.pct_change", None]},
             "turnover_rate": {"$ifNull": ["$quote.turnover_rate", None]},
@@ -220,12 +274,10 @@ class ScreenerRepo:
             "pb": {"$ifNull": ["$fundamental.pb", None]},
             "roe": {"$ifNull": ["$fundamental.roe", None]},
             "total_mv": {"$ifNull": ["$fundamental.total_mv", None]},
-            "main_net_buy": {"$ifNull": ["$capital.main_net_buy", None]},
-            "north_holding_change": {"$ifNull": ["$capital.north_holding_change", None]},
             "signals": "$signal",
         }})
 
-        cursor = self.db["stocks"].aggregate(pipeline, allowDiskUse=True, maxTimeMS=15000)
+        cursor = self.db["stocks"].aggregate(pipeline, allowDiskUse=True, maxTimeMS=10000)
         return await cursor.to_list(length=limit)
 
     async def get_industries(self) -> List[str]:

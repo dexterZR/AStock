@@ -3,6 +3,7 @@
     <div class="ai-header">
       <span class="ai-badge">AI</span>
       <span class="ai-title">智能选股</span>
+      <span v-if="llmName" class="ai-llm-name">· {{ llmName }}</span>
     </div>
     <div class="ai-input-row">
       <el-input
@@ -33,9 +34,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { screenerApi } from '@/api/modules/screener'
 import { useScreenerStore } from '@/stores/screenerStore'
+import { llmConfigApi } from '@/api/modules/llmConfig'
 import { ElMessage } from 'element-plus'
 
 const emit = defineEmits<{
@@ -47,6 +49,16 @@ const emit = defineEmits<{
 const screenerStore = useScreenerStore()
 const query = ref('')
 const picking = ref(false)
+const llmName = ref('')
+
+onMounted(async () => {
+  try {
+    const config = await llmConfigApi.getConfig()
+    if (config && config.name) {
+      llmName.value = config.name
+    }
+  } catch {}
+})
 
 async function handleParse() {
   if (!query.value.trim()) return
@@ -84,7 +96,7 @@ async function handlePick() {
     screenerStore.aiMatchedIndustryGroups = data.matched_industry_groups || []
     if (data.stocks && data.stocks.length > 0) {
       emit('picked', data)
-      const sourceLabel = data.source === 'llm' ? '🤖 MiniMax AI' : '🔑 关键词'
+      const sourceLabel = data.source === 'llm' ? `🤖 ${llmName.value || 'AI'}` : '🔑 关键词'
       const msg = data.explanation
         ? `${sourceLabel}：${data.explanation}，找到 ${data.stocks.length} 只`
         : `找到 ${data.stocks.length} 只匹配股票`
@@ -143,6 +155,11 @@ async function handleDaily() {
   color: var(--claude-accent);
   font-size: 14px;
   font-weight: 600;
+  font-family: var(--font-sans);
+}
+.ai-llm-name {
+  color: var(--claude-text-secondary);
+  font-size: 12px;
   font-family: var(--font-sans);
 }
 .ai-input-row {

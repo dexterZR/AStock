@@ -42,7 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy application code
 COPY --chown=appuser:appgroup ./app ./app
-COPY --chown=appuser:appgroup ./.env ./.env 2>/dev/null || true
+
+# ⚠️ 不要将 .env 文件打包进镜像！
+# 生产环境通过 docker-compose 或 K8s 环境变量注入 secrets：
+#   docker run -e MINIMAX_API_KEY=xxx -e TUSHARE_TOKEN=xxx ...
 
 # Switch to non-root user
 USER appuser

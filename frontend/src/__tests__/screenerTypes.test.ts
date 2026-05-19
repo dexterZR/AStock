@@ -67,8 +67,8 @@ describe('Screener Types', () => {
   })
 
   it('ConditionCategory type', () => {
-    const categories: ConditionCategory[] = ['technical', 'fundamental', 'pattern', 'capital', 'quote']
-    expect(categories).toHaveLength(5)
+    const categories: ConditionCategory[] = ['technical', 'fundamental', 'pattern', 'quote']
+    expect(categories).toHaveLength(4)
   })
 
   it('ConditionOp type', () => {
@@ -83,7 +83,6 @@ describe('CATEGORY_CONFIG', () => {
     expect(categories).toContain('technical')
     expect(categories).toContain('fundamental')
     expect(categories).toContain('pattern')
-    expect(categories).toContain('capital')
     expect(categories).toContain('quote')
   })
 

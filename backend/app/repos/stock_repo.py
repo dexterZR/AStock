@@ -22,9 +22,16 @@ class StockRepo:
 
     async def bulk_upsert(self, stocks: list[dict]) -> int:
         from pymongo import UpdateOne
-        ops = [
-            UpdateOne({"ts_code": s["ts_code"]}, {"$set": s}, upsert=True)
-            for s in stocks
-        ]
+        ops = []
+        for s in stocks:
+            ts_code = s["ts_code"]
+            update_fields = {k: v for k, v in s.items() if k != "ts_code"}
+            ops.append(
+                UpdateOne(
+                    {"ts_code": ts_code},
+                    {"$set": update_fields, "$setOnInsert": {"industry": ""}},
+                    upsert=True,
+                )
+            )
         result = await self.col.bulk_write(ops, ordered=False)
         return result.upserted_count + result.modified_count

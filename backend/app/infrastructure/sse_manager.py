@@ -6,11 +6,18 @@ from fastapi import Request
 
 
 class SSEManager:
+    MAX_CLIENTS = 200
+
     def __init__(self):
         self._clients: Dict[str, asyncio.Queue] = {}
         self._subscriptions: Dict[str, Set[str]] = {}
 
     async def connect(self, client_id: str) -> asyncio.Queue:
+        if len(self._clients) >= self.MAX_CLIENTS:
+            import logging
+            logger = logging.getLogger("app.sse")
+            logger.warning("SSE 连接数已达上限 (%d), 拒绝新连接: client_id=%s", self.MAX_CLIENTS, client_id)
+            raise ConnectionError(f"SSE 连接数已达上限 ({self.MAX_CLIENTS})")
         queue = asyncio.Queue(maxsize=100)
         self._clients[client_id] = queue
         return queue

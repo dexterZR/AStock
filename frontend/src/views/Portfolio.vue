@@ -196,6 +196,7 @@ import request from '@/api/request'
 import { ElMessage } from 'element-plus'
 import PreTradeChecklistModal from '@/components/PreTradeChecklistModal.vue'
 import { useRoutineStore } from '@/stores/routineStore'
+import DOMPurify from 'dompurify'
 
 const router = useRouter()
 const holdings = ref<any[]>([])
@@ -231,7 +232,7 @@ const renderedReport = computed(() => {
   for (const [en, zh] of Object.entries(translations)) {
     text = text.replace(new RegExp(`\\b${en}\\b`, 'g'), zh)
   }
-  return text
+  const html = text
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^- (.+)$/gm, '• $1')
@@ -239,6 +240,7 @@ const renderedReport = computed(() => {
     .replace(/\n/g, '<br>')
     .replace(/---/g, '<hr>')
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  return DOMPurify.sanitize(html)
 })
 
 function startEditShares(row: any) {

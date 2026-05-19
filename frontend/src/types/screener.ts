@@ -1,4 +1,4 @@
-export type ConditionCategory = 'technical' | 'fundamental' | 'pattern' | 'capital' | 'quote'
+export type ConditionCategory = 'technical' | 'fundamental' | 'pattern' | 'quote'
 export type ConditionOp = 'eq' | 'gt' | 'gte' | 'lt' | 'lte' | 'range' | 'in_'
 
 export interface ScreenerCondition {
@@ -27,8 +27,6 @@ export interface ScreenerResult {
   pb?: number
   roe?: number
   total_mv?: number
-  main_net_buy?: number
-  north_holding_change?: number
   signals?: Record<string, boolean>
   ai_reason?: string
   match_score?: number
@@ -76,7 +74,6 @@ export const CATEGORY_CONFIG: Record<ConditionCategory, { label: string; color: 
   technical: { label: '技术', color: 'var(--claude-accent)', bgColor: 'var(--claude-accent-light)', borderColor: 'rgba(217,119,87,0.3)' },
   fundamental: { label: '基本', color: 'var(--claude-blue)', bgColor: 'var(--claude-blue-light)', borderColor: 'rgba(106,155,204,0.3)' },
   pattern: { label: '形态', color: 'var(--claude-green)', bgColor: 'var(--claude-green-light)', borderColor: 'rgba(120,140,93,0.3)' },
-  capital: { label: '资金', color: 'var(--color-warning)', bgColor: 'rgba(212,168,67,0.08)', borderColor: 'rgba(212,168,67,0.3)' },
   quote: { label: '行情', color: 'var(--claude-text-secondary)', bgColor: 'var(--claude-overlay)', borderColor: 'var(--claude-border)' },
 }
 
@@ -113,11 +110,6 @@ export const CONDITION_OPTIONS: Record<ConditionCategory, { field: string; label
     { field: 'profit_growth', label: '净利润增长率(%)', ops: ['range', 'gt', 'lt'], hasRange: true },
     { field: 'dividend_yield', label: '股息率(%)', ops: ['range', 'gt', 'lt'], hasRange: true },
     { field: 'total_mv', label: '总市值(亿)', ops: ['range', 'gt', 'lt'], hasRange: true },
-  ],
-  capital: [
-    { field: 'main_net_buy', label: '主力净买入(万)', ops: ['gt', 'lt', 'range'], hasRange: true },
-    { field: 'big_net_buy', label: '大单净买入(万)', ops: ['gt', 'lt', 'range'], hasRange: true },
-    { field: 'north_holding_change', label: '北向资金变动(%)', ops: ['gt', 'lt', 'range'], hasRange: true },
   ],
   quote: [
     { field: 'price', label: '价格', ops: ['range', 'gt', 'lt'], hasRange: true },

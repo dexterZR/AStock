@@ -1,6 +1,5 @@
 <template>
   <div class="dashboard">
-    <!-- 顶部：大盘指数 -->
     <el-row :gutter="12">
       <el-col :span="8" v-for="idx in marketStore.indices" :key="idx.code">
         <div class="idx-card" @click="goToStock(idx.code)" style="cursor:pointer">
@@ -14,10 +13,9 @@
       </el-col>
     </el-row>
 
-    <!-- 中间：左-市场情绪+板块 / 中-AI讨论+持仓预警 / 右-AI精选新闻 -->
-    <el-row :gutter="16" style="margin-top: 16px">
+    <el-row :gutter="12" style="margin-top:12px">
       <el-col :span="6">
-        <el-card>
+        <el-card class="fill-card">
           <template #header><span>📊 市场情绪</span></template>
           <div v-loading="overviewLoading">
             <div v-if="overview" class="stat-grid">
@@ -38,8 +36,45 @@
             <div class="temp-desc">{{ tempDesc }}</div>
           </div>
         </el-card>
+        <el-card class="fill-card" style="margin-top:12px">
+          <template #header><span>💼 持仓</span></template>
+          <div v-if="portfolio.length" class="port-mini">
+            <div v-for="p in portfolio" :key="p.ts_code" class="port-row" @click="goToStock(p.ts_code)">
+              <span class="port-name">{{ p.name }}</span>
+              <span class="port-price">{{ p.latest_price?.toFixed(2) }}</span>
+              <span class="port-pnl change" :class="p.pct_change >= 0 ? 'up' : 'down'">{{ p.pct_change >= 0 ? '+' : '' }}{{ p.pct_change?.toFixed(2) }}%</span>
+            </div>
+          </div>
+          <el-empty v-else description="暂无持仓" :image-size="36" />
+        </el-card>
+        <el-card class="fill-card" style="margin-top:12px">
+          <template #header>
+            <div class="card-hd">
+              <span>🔔 预警</span>
+              <el-tag v-if="alerts.length" size="small" type="danger">{{ alerts.length }}</el-tag>
+            </div>
+          </template>
+          <div v-if="alerts.length" class="alert-mini">
+            <div v-for="a in displayAlerts" :key="a._id" class="alert-line" :class="a.alert_level" @click="openAlert(a)">
+              <span class="alert-lvl">{{ a.alert_level === 'high' ? '🔴' : '🟡' }}</span>
+              <span class="alert-txt">{{ a.title }}</span>
+              <span class="alert-arrow">›</span>
+            </div>
+            <div v-if="!alertsExpanded && alerts.length > 5" class="load-more">
+              <el-button text size="small" @click="alertsExpanded = true">展开更多 ({{ alerts.length - 5 }} 条)</el-button>
+            </div>
+          </div>
+          <el-empty v-else description="暂无预警" :image-size="36" />
+        </el-card>
+      </el-col>
+
+      <el-col :span="12">
+        <AgentDiscussion
+          :messages="discussion"
+          :discussing="discussing"
+          @refresh="runDiscussion"
+        />
         <SectorRanking
-          style="margin-top:12px"
           :sectors="sectorRanking"
           :stocks="sectorStocks"
           :tab="sectorTab"
@@ -49,46 +84,12 @@
           @select="selectSector"
           @go-stock="goToStock"
           @auto-select="autoSelectSector"
+          style="margin-top:12px"
         />
       </el-col>
 
-      <el-col :span="10">
-        <AgentDiscussion
-          :messages="discussion"
-          :discussing="discussing"
-          @refresh="runDiscussion"
-        />
-        <el-row :gutter="12" style="margin-top:12px">
-          <el-col :span="12">
-            <el-card>
-              <template #header><span>💼 持仓</span></template>
-              <div v-if="portfolio.length" class="port-mini">
-                <div v-for="p in portfolio" :key="p.ts_code" class="port-row" @click="goToStock(p.ts_code)">
-                  <span class="port-name">{{ p.name }}</span>
-                  <span class="port-pnl change" :class="p.unrealized_pnl_pct >= 0 ? 'up' : 'down'">{{ p.unrealized_pnl_pct >= 0 ? '+' : '' }}{{ p.unrealized_pnl_pct?.toFixed(1) }}%</span>
-                </div>
-              </div>
-              <el-empty v-else description="暂无持仓" :image-size="36" />
-            </el-card>
-          </el-col>
-          <el-col :span="12">
-            <el-card>
-              <template #header><span>🔔 预警</span></template>
-              <div v-if="alerts.length" class="alert-mini">
-                <div v-for="a in alerts.slice(0,3)" :key="a._id" class="alert-line" :class="a.alert_level">
-                  <span class="alert-lvl">{{ a.alert_level === 'high' ? '🔴' : '🟡' }}</span>
-                  <span class="alert-txt">{{ a.title }}</span>
-                </div>
-              </div>
-              <el-empty v-else description="暂无预警" :image-size="36" />
-            </el-card>
-          </el-col>
-        </el-row>
-      </el-col>
-
-      <el-col :span="8">
-        <!-- AI精选新闻 -->
-        <el-card class="ai-news-card">
+      <el-col :span="6">
+        <el-card class="fill-card">
           <template #header>
             <div class="card-hd">
               <span>🤖 AI精选</span>
@@ -129,17 +130,11 @@
             <el-button text size="small" @click="loadMoreNews" :loading="newsLoadingMore">加载更多</el-button>
           </div>
         </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 底部：热点新闻 + 舆情 -->
-    <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :span="16">
-        <el-card>
+        <el-card class="fill-card" style="margin-top:12px">
           <template #header>
             <div class="card-hd">
-              <span>📰 市场资讯</span>
-              <el-select v-model="newsTab" size="small" style="width:110px">
+              <span>📰 资讯</span>
+              <el-select v-model="newsTab" size="small" style="width:90px">
                 <el-option label="全部" value="all" />
                 <el-option label="AI推荐" value="recommended" />
                 <el-option label="公告" value="official" />
@@ -154,7 +149,6 @@
                 <el-tag v-if="item.ai_recommended" size="small" type="danger" effect="dark">AI推荐</el-tag>
                 <el-tag :type="getNewsTypeColor(item.type)" size="small">{{ getNewsTypeLabel(item.type) }}</el-tag>
                 <span class="news-time">{{ formatNewsTime(item.pub_date) }}</span>
-                <span v-if="item.source" class="news-source">{{ item.source }}</span>
                 <span v-if="item.value_score" class="value-badge">⭐{{ item.value_score }}</span>
               </div>
               <div class="news-title">{{ item.title }}</div>
@@ -171,31 +165,12 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :span="8">
-        <el-card>
-          <template #header><span>🔥 热点新闻</span></template>
-          <div v-loading="hotNewsLoading" class="hot-list">
-            <div v-for="(item, index) in hotNews" :key="item.id" class="hot-item" @click="openNews(item)">
-              <span class="hot-rank" :class="{ top: index < 3 }">{{ index + 1 }}</span>
-              <div class="hot-content">
-                <div class="hot-title">{{ item.title }}</div>
-                <div class="hot-meta">
-                  <span class="hot-score">{{ item.heat_score }}°</span>
-                  <span class="hot-time">{{ formatNewsTime(item.pub_date) }}</span>
-                  <span v-if="item.ai_brief" class="hot-ai">💡{{ item.ai_brief.slice(0, 15) }}...</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
     </el-row>
 
     <div class="data-timestamp" v-if="overview">
       📡 数据更新于 {{ new Date().toLocaleString('zh-CN') }} · 共 {{ overview.total_stocks }} 只股票
     </div>
 
-    <!-- 新闻详情弹窗 -->
     <el-dialog v-model="showNewsDetail" :title="currentNews?.title" width="700px">
       <div v-if="currentNews" class="news-detail">
         <div class="detail-meta">
@@ -215,7 +190,12 @@
         </div>
         <div class="detail-content">
           <p>{{ currentNews.summary }}</p>
-          <p class="detail-tip">（详细内容请访问原文链接）</p>
+        </div>
+        <div v-if="currentNews.url" class="detail-link">
+          <el-button type="primary" size="small" @click="openNewsUrl(currentNews.url!)">🔗 查看原文</el-button>
+        </div>
+        <div v-else class="detail-content">
+          <p class="detail-tip">（详细内容请访问原文来源）</p>
         </div>
         <div v-if="currentNews.related_stocks?.length" class="detail-stocks">
           <span class="stocks-label">涉及股票：</span>
@@ -223,12 +203,46 @@
         </div>
       </div>
     </el-dialog>
+
+    <el-dialog v-model="showAlertDetail" :title="currentAlert?.title" width="620px">
+      <div v-if="currentAlert" class="alert-detail">
+        <div class="alert-detail-meta">
+          <el-tag :type="currentAlert.alert_level === 'high' ? 'danger' : 'warning'" effect="dark" size="small">{{ currentAlert.alert_level === 'high' ? '高风险' : '中风险' }}</el-tag>
+          <span class="alert-detail-stock" @click="goToStock(currentAlert.ts_code); showAlertDetail = false" style="cursor:pointer;color:var(--claude-accent)">{{ currentAlert.name }}（{{ currentAlert.ts_code }}）</span>
+          <span class="alert-detail-time">{{ currentAlert.triggered_at }}</span>
+        </div>
+        <div v-if="currentAlert.source" class="alert-detail-source">
+          <span class="source-label">📰 来源：</span>
+          <span class="source-name">{{ currentAlert.source }}</span>
+        </div>
+        <div class="alert-detail-desc">{{ currentAlert.description }}</div>
+        <div v-if="alertNewsLoading" class="alert-news-loading">
+          <el-icon class="is-loading"><Loading /></el-icon> 加载相关新闻...
+        </div>
+        <div v-else-if="alertNews.length" class="alert-detail-news">
+          <div class="alert-news-header">📄 相关新闻</div>
+          <div v-for="n in alertNews" :key="n.id" class="alert-news-item" @click="openNews(n); showAlertDetail = false">
+            <div class="alert-news-title">{{ n.title }}</div>
+            <div class="alert-news-meta">
+              <span v-if="n.source" class="alert-news-source">{{ n.source }}</span>
+              <span class="alert-news-time">{{ formatNewsTime(n.pub_date) }}</span>
+              <el-tag v-if="n.ai_recommended" size="small" type="danger" effect="dark">AI推荐</el-tag>
+              <span v-if="n.value_score" class="value-badge">⭐{{ n.value_score }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="alert-detail-actions">
+          <el-button type="primary" size="small" @click="goToStock(currentAlert.ts_code); showAlertDetail = false">查看股票</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Loading } from '@element-plus/icons-vue'
 import { useDashboard } from '@/composables/useDashboard'
 import { useMarketStore } from '@/stores/marketStore'
 import AgentDiscussion from '@/components/dashboard/AgentDiscussion.vue'
@@ -241,9 +255,10 @@ const {
   barUpWidth, barDownWidth, barFlatWidth, tempColor, tempDesc,
   discussion, discussing,
   portfolio, alerts,
-  newsList, hotNews, newsTab, newsLoading, newsLoadingMore, hotNewsLoading, showNewsDetail, currentNews, hasMoreNews,
+  newsList, newsTab, newsLoading, newsLoadingMore, showNewsDetail, currentNews, hasMoreNews,
+  alertNews, alertNewsLoading,
   loadPortfolio, loadAlerts, loadNews, loadHotNews, loadMoreNews,
-  openNews, goToStock, loadOverview, loadSectorRankings, selectSector, autoSelectSector, runDiscussion,
+  openNews, loadAlertNews, goToStock, loadOverview, loadSectorRankings, selectSector, autoSelectSector, runDiscussion,
 } = useDashboard()
 
 const newsTypeMap: Record<string, string> = {
@@ -263,6 +278,20 @@ const normalNews = computed(() => {
   return aiNewsExpanded.value ? items : items.slice(0, 6)
 })
 const aiNewsExpanded = ref(false)
+const alertsExpanded = ref(false)
+const showAlertDetail = ref(false)
+const currentAlert = ref<any>(null)
+
+const displayAlerts = computed(() => {
+  if (alertsExpanded.value) return alerts.value
+  return alerts.value.slice(0, 5)
+})
+
+function openAlert(a: any) {
+  currentAlert.value = a
+  showAlertDetail.value = true
+  if (a.ts_code) loadAlertNews(a.ts_code)
+}
 const displayNewsList = computed(() => {
   if (newsTab.value === 'recommended') return newsList.value.filter(n => n.ai_recommended)
   return newsList.value
@@ -271,6 +300,10 @@ const displayNewsList = computed(() => {
 function goToStockByName(name: string) {
   showNewsDetail.value = false
   router.push({ path: '/stock', query: { code: name } })
+}
+
+function openNewsUrl(url: string) {
+  window.open(url, '_blank')
 }
 
 function formatNewsTime(dateStr: string) {
@@ -284,6 +317,8 @@ function formatNewsTime(dateStr: string) {
 
 watch(newsTab, () => { loadNews(true); loadHotNews() })
 
+let _refreshTimer: ReturnType<typeof setInterval> | null = null
+
 onMounted(() => {
   marketStore.fetchMarketOverview()
   loadOverview()
@@ -293,6 +328,17 @@ onMounted(() => {
   loadNews()
   loadHotNews()
   setTimeout(() => runDiscussion(), 500)
+  _refreshTimer = setInterval(() => {
+    loadAlerts()
+    loadPortfolio()
+  }, 60000)
+})
+
+onUnmounted(() => {
+  if (_refreshTimer) {
+    clearInterval(_refreshTimer)
+    _refreshTimer = null
+  }
 })
 </script>
 
@@ -308,6 +354,8 @@ onMounted(() => {
 .idx-label { font-size:11px; color:var(--claude-text-secondary); }
 .up { color:var(--color-up); }
 .down { color:var(--color-down); }
+
+.fill-card :deep(.el-card__body) { flex:1; display:flex; flex-direction:column; }
 
 .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:var(--space-2); }
 .stat-item { text-align:center; padding:6px; border-radius:var(--radius-sm); }
@@ -328,78 +376,83 @@ onMounted(() => {
 .port-mini { max-height:160px; overflow-y:auto; }
 .port-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--claude-border); cursor:pointer; font-size:12px; }
 .port-row:hover { background:var(--claude-accent-light); }
-.port-name { font-weight:500; }
-.port-pnl { font-weight:600; }
+.port-name { font-weight:500; flex:1; }
+.port-price { color:var(--claude-text-secondary); margin-right:8px; }
+.port-pnl { font-weight:600; min-width:60px; text-align:right; }
 
 .alert-mini { max-height:160px; overflow-y:auto; }
-.alert-line { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--claude-border); font-size:12px; }
+.alert-line { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--claude-border); font-size:12px; cursor:pointer; }
+.alert-line:hover { background:var(--claude-accent-light); }
 .alert-lvl { font-size:14px; }
 .alert-txt { flex:1; line-height:1.4; }
+.alert-arrow { color:var(--claude-text-secondary); font-size:16px; }
 
-/* AI精选新闻 */
-.ai-news-card { height: 100%; }
-.ai-news-list { overflow-y: auto; }
-.ai-news-item { padding: 12px; border-bottom: 1px solid var(--claude-border); cursor: pointer; transition: background 0.15s; }
-.ai-news-item:hover { background: var(--claude-accent-light); }
-.ai-news-item:last-child { border-bottom: none; }
-.ai-news-item.recommended { background: rgba(245, 108, 108, 0.04); border-left: 3px solid #f56c6c; }
-.ai-news-item.recommended:hover { background: rgba(245, 108, 108, 0.08); }
-.ai-news-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.ai-value-score { font-size: 11px; color: #e6a23c; font-weight: 600; }
-.ai-action-hint { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: var(--claude-bg); }
-.ai-news-title { font-size: 13px; font-weight: 500; line-height: 1.5; margin-bottom: 4px; font-family: var(--font-sans); }
-.ai-brief { font-size: 12px; color: #e6a23c; line-height: 1.4; margin-bottom: 4px; padding: 4px 8px; background: rgba(230, 162, 60, 0.06); border-radius: 4px; }
-.ai-news-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.affected-sectors { font-size: 11px; color: var(--claude-accent); }
+.alert-detail-meta { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+.alert-detail-stock { font-weight:600; font-size:14px; }
+.alert-detail-time { font-size:12px; color:var(--claude-text-secondary); }
+.alert-detail-desc { font-size:14px; line-height:1.8; padding:12px 16px; background:var(--claude-bg); border-radius:8px; margin-bottom:16px; }
+.alert-detail-source { display:flex; align-items:center; gap:4px; margin-bottom:12px; font-size:13px; }
+.source-label { color:var(--claude-text-secondary); }
+.source-name { font-weight:600; color:var(--claude-accent); }
+.alert-news-loading { text-align:center; padding:16px; color:var(--claude-text-secondary); font-size:13px; }
+.alert-detail-news { margin-bottom:16px; }
+.alert-news-header { font-size:13px; font-weight:600; margin-bottom:8px; color:var(--claude-text-secondary); }
+.alert-news-item { padding:10px 12px; border:1px solid var(--claude-border); border-radius:6px; margin-bottom:8px; cursor:pointer; transition:background 0.15s; }
+.alert-news-item:hover { background:var(--claude-accent-light); }
+.alert-news-title { font-size:13px; font-weight:500; line-height:1.5; margin-bottom:4px; }
+.alert-news-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.alert-news-source { font-size:11px; color:var(--claude-accent); font-weight:500; }
+.alert-news-time { font-size:11px; color:var(--claude-text-secondary); }
+.alert-detail-actions { text-align:right; }
 
-/* 底部新闻 */
-.news-list { max-height: 500px; overflow-y: auto; }
-.news-item { padding: 14px; border-bottom: 1px solid var(--claude-border); cursor: pointer; transition: background 0.15s; }
-.news-item:hover { background: var(--claude-accent-light); }
-.news-item:last-child { border-bottom: none; }
-.news-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
-.news-time, .news-source { font-size: 11px; color: var(--claude-text-secondary); }
-.news-title { font-size: 14px; font-weight: 500; line-height: 1.5; margin-bottom: 4px; padding-left: 8px; border-left: 2px solid var(--claude-accent); font-family: var(--font-sans); }
-.news-ai-brief { font-size: 12px; color: #e6a23c; line-height: 1.4; margin-bottom: 4px; padding-left: 8px; }
-.news-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.heat-badge { font-size: 11px; color: var(--color-up); font-weight: 600; }
-.related-stocks { font-size: 11px; color: var(--claude-text-secondary); }
-.value-badge { font-size: 11px; color: #e6a23c; font-weight: 600; }
-.load-more { text-align: center; padding: 12px; }
-.empty-state { padding: 30px 0; }
+.ai-news-list { max-height:320px; overflow-y:auto; }
+.ai-news-item { padding:10px; border-bottom:1px solid var(--claude-border); cursor:pointer; transition:background 0.15s; }
+.ai-news-item:hover { background:var(--claude-accent-light); }
+.ai-news-item:last-child { border-bottom:none; }
+.ai-news-item.recommended { background:rgba(245,108,108,0.04); border-left:3px solid #f56c6c; }
+.ai-news-item.recommended:hover { background:rgba(245,108,108,0.08); }
+.ai-news-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap; }
+.ai-value-score { font-size:11px; color:#e6a23c; font-weight:600; }
+.ai-action-hint { font-size:11px; font-weight:600; padding:1px 6px; border-radius:3px; background:var(--claude-bg); }
+.ai-news-title { font-size:13px; font-weight:500; line-height:1.5; margin-bottom:4px; font-family:var(--font-sans); }
+.ai-brief { font-size:12px; color:#e6a23c; line-height:1.4; margin-bottom:4px; padding:4px 8px; background:rgba(230,162,60,0.06); border-radius:4px; }
+.ai-news-footer { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.affected-sectors { font-size:11px; color:var(--claude-accent); }
 
-.hot-list { max-height: 400px; overflow-y: auto; }
-.hot-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--claude-border); cursor: pointer; }
-.hot-item:hover { background: var(--claude-bg); }
-.hot-item:last-child { border-bottom: none; }
-.hot-rank { width: 18px; height: 18px; background: var(--claude-bg); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--claude-text-secondary); flex-shrink: 0; }
-.hot-rank.top { background: var(--claude-accent); color: #fff; }
-.hot-content { flex: 1; min-width: 0; }
-.hot-title { font-size: 12px; line-height: 1.4; margin-bottom: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-family: var(--font-sans); }
-.hot-meta { display: flex; align-items: center; gap: 6px; }
-.hot-score { font-size: 10px; color: var(--color-up); font-weight: 600; }
-.hot-time { font-size: 10px; color: var(--claude-text-secondary); }
-.hot-ai { font-size: 10px; color: #e6a23c; }
+.news-list { max-height:400px; overflow-y:auto; }
+.news-item { padding:10px; border-bottom:1px solid var(--claude-border); cursor:pointer; transition:background 0.15s; }
+.news-item:hover { background:var(--claude-accent-light); }
+.news-item:last-child { border-bottom:none; }
+.news-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap; }
+.news-time, .news-source { font-size:11px; color:var(--claude-text-secondary); }
+.news-title { font-size:13px; font-weight:500; line-height:1.5; margin-bottom:4px; padding-left:8px; border-left:2px solid var(--claude-accent); font-family:var(--font-sans); }
+.news-ai-brief { font-size:12px; color:#e6a23c; line-height:1.4; margin-bottom:4px; padding-left:8px; }
+.news-footer { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.heat-badge { font-size:11px; color:var(--color-up); font-weight:600; }
+.related-stocks { font-size:11px; color:var(--claude-text-secondary); }
+.value-badge { font-size:11px; color:#e6a23c; font-weight:600; }
+.load-more { text-align:center; padding:10px; }
+.empty-state { padding:30px 0; }
 
-/* 新闻详情 */
-.news-detail { line-height: 1.8; }
-.detail-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--claude-border); flex-wrap: wrap; }
-.detail-source, .detail-time { font-size: 12px; color: var(--claude-text-secondary); }
-.detail-ai-brief { padding: 10px 12px; background: rgba(230, 162, 60, 0.06); border-radius: 6px; margin-bottom: 12px; font-size: 14px; line-height: 1.6; }
-.ai-label { font-weight: 600; color: #e6a23c; }
-.action-hint { font-size: 12px; font-weight: 600; margin-left: 8px; padding: 1px 8px; border-radius: 3px; background: var(--claude-bg); }
-.detail-sectors { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--claude-border); }
-.sectors-label { font-size: 12px; color: var(--claude-text-secondary); margin-right: 6px; }
-.detail-content { margin-bottom: 12px; }
-.detail-content p { margin-bottom: 10px; font-size: 14px; }
-.detail-tip { font-size: 11px; color: var(--claude-text-secondary); font-style: italic; }
-.detail-stocks { padding-top: 10px; border-top: 1px solid var(--claude-border); }
-.stocks-label { font-size: 12px; color: var(--claude-text-secondary); }
+.news-detail { line-height:1.8; }
+.detail-meta { display:flex; align-items:center; gap:10px; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--claude-border); flex-wrap:wrap; }
+.detail-source, .detail-time { font-size:12px; color:var(--claude-text-secondary); }
+.detail-ai-brief { padding:10px 12px; background:rgba(230,162,60,0.06); border-radius:6px; margin-bottom:12px; font-size:14px; line-height:1.6; }
+.ai-label { font-weight:600; color:#e6a23c; }
+.action-hint { font-size:12px; font-weight:600; margin-left:8px; padding:1px 8px; border-radius:3px; background:var(--claude-bg); }
+.detail-sectors { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--claude-border); }
+.sectors-label { font-size:12px; color:var(--claude-text-secondary); margin-right:6px; }
+.detail-content { margin-bottom:12px; }
+.detail-content p { margin-bottom:10px; font-size:14px; }
+.detail-tip { font-size:11px; color:var(--claude-text-secondary); font-style:italic; }
+.detail-link { margin-bottom:12px; }
+.detail-stocks { padding-top:10px; border-top:1px solid var(--claude-border); }
+.stocks-label { font-size:12px; color:var(--claude-text-secondary); }
 
 .data-timestamp {
-  text-align: center;
-  padding: 12px 0 6px;
-  font-size: var(--text-xs);
-  color: var(--claude-text-tertiary);
+  text-align:center;
+  padding:12px 0 6px;
+  font-size:var(--text-xs);
+  color:var(--claude-text-tertiary);
 }
 </style>

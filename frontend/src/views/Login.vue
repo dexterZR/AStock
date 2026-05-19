@@ -59,8 +59,8 @@ async function handleLogin() {
     ElMessage.warning('请填写用户名和密码')
     return
   }
-  if (password.length < 4) {
-    ElMessage.warning('密码至少4位')
+  if (password.length < 8) {
+    ElMessage.warning('密码至少8位，需包含大小写字母和数字')
     return
   }
   loading.value = true

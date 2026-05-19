@@ -9,9 +9,10 @@ from app.core.logging_config import setup_logging
 from app.repos.indexes import create_indexes
 from app.infrastructure.sse_manager import SSEManager
 from app.api.errors import register_exception_handlers
-from app.api.middleware import RequestContextMiddleware, SlowQueryMiddleware
+from app.api.middleware import RequestContextMiddleware, SlowQueryMiddleware, CSRFMiddleware
+from app.api.auth_middleware import AuthMiddleware
 from app.api.ratelimit import RateLimitMiddleware
-from app.api.routers import health, stocks, quotes, screener, sse, indicators, watchlist, market, analysis, portfolio, checklist, routine, auth, sector, news
+from app.api.routers import health, stocks, quotes, screener, sse, indicators, watchlist, market, analysis, portfolio, checklist, routine, auth, sector, news, llm_config
 
 
 @asynccontextmanager
@@ -21,7 +22,11 @@ async def lifespan(app: FastAPI):
     from app.core.database import db
     await create_indexes(db)
     app.state.sse_manager = SSEManager()
+    from app.jobs.routine_jobs import start_scheduler
+    start_scheduler()
     yield
+    from app.jobs.routine_jobs import scheduler
+    scheduler.shutdown(wait=False)
     await close_db()
 
 
@@ -32,6 +37,8 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(SlowQueryMiddleware, threshold_ms=500)
 app.add_middleware(RateLimitMiddleware, max_requests=120, window_seconds=60)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -59,6 +66,7 @@ app.include_router(routine.router)
 app.include_router(auth.router)
 app.include_router(sector.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
+app.include_router(llm_config.router)
 
 
 @app.get("/")

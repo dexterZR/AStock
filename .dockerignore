@@ -43,6 +43,7 @@ tests/
 coverage/
 
 # Env
+.env
 .env.local
 .env.*.local
 *.log
