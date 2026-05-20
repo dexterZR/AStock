@@ -1,11 +1,39 @@
 from typing import List, Dict, Optional
+import asyncio
+import re
+import hashlib
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime
 import json
 
+from app.core.config import settings
+
+# ============================================================
+# 行业权重配置（可修改）
+# ============================================================
+INDUSTRY_WEIGHTS = {
+    # 高关注行业 — 市场热度高，给予较高加分
+    "high_attention": ["银行", "白酒", "电力", "医药", "通信", "新能源", "半导体", "人工智能"],
+    "high_attention_score": 8,
+    # 稳定行业 — 波动小、防御性强
+    "stable": ["银行", "电力", "交通运输"],
+    "stable_score": 5,
+    # 高成长行业
+    "growth": ["新能源", "半导体", "人工智能", "通信"],
+    "growth_score": 10,
+}
+
 
 class MultiAgentAnalysisService:
-    """选股多Agent分析服务（深度版）"""
+    """选股多Agent分析服务（深度版）
+
+    三维度分析：
+    1. 技术面（Technical Agent）— 趋势 / 量价 / MACD / RSI / KDJ / 支撑压力
+    2. 基本面（Fundamental Agent）— 行业 / 市值 / 成交额 / 价格位置 / 波动率
+    3. 催化剂（Catalyst Agent）— 短期动量 / 量价突破 / 指标信号强化
+
+    支持 LLM 生成自然语言深度分析报告（需配置 LLM_API_KEY）。
+    """
 
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -60,6 +88,17 @@ class MultiAgentAnalysisService:
         latest = quotes[-1]
         prev = quotes[-2] if len(quotes) > 1 else latest
 
+        # 调用 LLM 生成深度分析报告（不可用时静默降级）
+        llm_report = await self._generate_llm_deep_report(
+            ts_code=ts_code,
+            name=stock.get("name", "") if stock else "",
+            latest=latest,
+            technical=tech,
+            fundamental=fund,
+            catalyst=catalyst,
+            total_score=total_score,
+        )
+
         return {
             "ts_code": ts_code,
             "name": stock.get("name", "") if stock else "",
@@ -73,6 +112,7 @@ class MultiAgentAnalysisService:
             "key_signals": self._extract_key_signals(quotes, indicators),
             "operation_suggestion": self._operation_suggestion(total_score, quotes, indicators),
             "verdict": self._verdict(total_score, tech, fund, catalyst),
+            "llm_deep_report": llm_report,  # LLM 生成的深度分析报告
         }
 
     def _technical_agent(self, quotes: List[Dict], indicators: List[Dict]) -> Dict:
@@ -258,22 +298,25 @@ class MultiAgentAnalysisService:
         details = []
         industry_analysis = ""
 
-        # 行业分析
+        # 行业分析（使用可配置权重）
         industry = stock.get("industry", "") if stock else ""
         if industry:
-            good_industries = ["银行", "白酒", "电力", "医药", "通信", "新能源", "半导体", "人工智能"]
-            stable_industries = ["银行", "电力", "交通运输"]
-            growth_industries = ["新能源", "半导体", "人工智能", "通信"]
+            hi_list = INDUSTRY_WEIGHTS.get("high_attention", [])
+            hi_score = INDUSTRY_WEIGHTS.get("high_attention_score", 8)
+            st_list = INDUSTRY_WEIGHTS.get("stable", [])
+            st_score = INDUSTRY_WEIGHTS.get("stable_score", 5)
+            gr_list = INDUSTRY_WEIGHTS.get("growth", [])
+            gr_score = INDUSTRY_WEIGHTS.get("growth_score", 10)
 
-            if industry in good_industries:
-                score += 8
-                reasons.append(f"属于{industry}板块，属于市场较关注行业")
-            elif industry in stable_industries:
-                score += 5
-                reasons.append(f"属于{industry}，行业稳定，波动较小")
-            elif industry in growth_industries:
-                score += 10
+            if industry in gr_list:
+                score += gr_score
                 reasons.append(f"属于{industry}，高成长赛道")
+            elif industry in hi_list:
+                score += hi_score
+                reasons.append(f"属于{industry}板块，属于市场较关注行业")
+            elif industry in st_list:
+                score += st_score
+                reasons.append(f"属于{industry}，行业稳定，波动较小")
 
             industry_analysis = f"所在行业：{industry}"
 
@@ -614,6 +657,246 @@ class MultiAgentAnalysisService:
             "color": color,
             "summary": f"综合评分{total}分。{best['dimension']}最佳({best['score']}分)，{worst['dimension']}需注意({worst['score']}分)。",
         }
+
+    # ——————————————————————————————————————————
+    # LLM 深度分析报告
+    # ——————————————————————————————————————————
+
+    async def _get_llm_config(self) -> dict:
+        """获取LLM配置（优先数据库自定义配置，回退环境变量）"""
+        try:
+            config = await self.db["llm_config"].find_one({"is_active": True})
+            if config and config.get("api_key"):
+                return {
+                    "api_key": config["api_key"],
+                    "base_url": config.get("base_url", ""),
+                    "model": config.get("model", ""),
+                }
+        except Exception:
+            pass
+        return {
+            "api_key": settings.LLM_API_KEY,
+            "base_url": settings.LLM_BASE_URL,
+            "model": settings.LLM_MODEL,
+        }
+
+    def _is_llm_available(self, llm_config: dict) -> bool:
+        return bool(llm_config.get("api_key"))
+
+    def _build_deep_report_prompt(
+        self,
+        ts_code: str,
+        name: str,
+        latest: dict,
+        technical: dict,
+        fundamental: dict,
+        catalyst: dict,
+        total_score: float,
+    ) -> str:
+        """构建LLM深度分析报告的system prompt"""
+        tech_signals = json.dumps(technical.get("signals", []), ensure_ascii=False)
+        tech_reasons = json.dumps(technical.get("reasons", []), ensure_ascii=False)
+        fund_reasons = json.dumps(fundamental.get("reasons", []), ensure_ascii=False)
+        cat_reasons = json.dumps(catalyst.get("reasons", []), ensure_ascii=False)
+
+        return f"""你是一个专业的A股投资分析师。请基于以下数据，为股票撰写一份专业、精炼的中文投资分析报告。
+
+【股票信息】
+代码：{ts_code}
+名称：{name}
+最新收盘价：{latest.get('close', 0):.2f}元
+当日涨跌幅：{latest.get('pct_change', 0):.2f}%
+
+【评分】
+综合评分：{total_score}分（满分100）
+技术面：{technical.get('score', 0)}分 — 趋势：{technical.get('trend_strength', '未知')}
+基本面：{fundamental.get('score', 0)}分
+催化剂：{catalyst.get('score', 0)}分
+
+【技术面分析】
+趋势强度：{technical.get('trend_strength', '未知')}
+指标状态：MACD({technical.get('indicators_status', {}).get('macd', '未知')}) RSI({technical.get('indicators_status', {}).get('rsi', '未知')}) KDJ({technical.get('indicators_status', {}).get('kdj', '未知')})
+支撑/压力：弱支撑{technical.get('support_resistance', {}).get('weak_support', 'N/A')} 强支撑{technical.get('support_resistance', {}).get('strong_support', 'N/A')} 弱压力{technical.get('support_resistance', {}).get('weak_resistance', 'N/A')} 强压力{technical.get('support_resistance', {}).get('strong_resistance', 'N/A')}
+技术信号：{tech_signals}
+判断理由：{tech_reasons}
+
+【基本面分析】
+行业：{fundamental.get('industry_analysis', '未知')}
+市值特征：{fundamental.get('cap_analysis', '未知')}
+价格位置分位：{fundamental.get('price_position', 50):.0f}%
+判断理由：{fund_reasons}
+
+【催化剂分析】
+动量信号：{json.dumps(catalyst.get('momentum_signals', []), ensure_ascii=False)}
+判断理由：{cat_reasons}
+
+请按照以下格式输出分析报告（用纯文本，不要JSON）：
+
+## 核心观点
+（1-2句话总结该股票的投资价值，明确态度：看多/看空/观望）
+
+## 技术面研判
+（对趋势、指标、量价的综合解读，2-3句话）
+
+## 基本面评估
+（行业地位、估值水平、流动性的评估，1-2句话）
+
+## 催化剂与风险
+（短期驱动因素和需要警惕的风险，2-3句话）
+
+## 操作建议
+（给出具体的操作思路：关注区间、止损参考、仓位建议）
+
+注意：
+- 语言专业但易懂，面向有一定经验的散户投资者
+- 不给出绝对的买卖建议，强调风险提示
+- 控制总字数在300字以内，精简有力"""
+
+    async def _generate_llm_deep_report(
+        self,
+        ts_code: str,
+        name: str,
+        latest: dict,
+        technical: dict,
+        fundamental: dict,
+        catalyst: dict,
+        total_score: float,
+    ) -> dict:
+        """使用LLM生成深度分析报告。LLM不可用时返回结构化摘要。"""
+        llm_config = await self._get_llm_config()
+
+        # LLM不可用 → 返回结构化摘要作为降级方案
+        if not self._is_llm_available(llm_config):
+            return self._build_fallback_report(
+                ts_code, name, latest, technical, fundamental, catalyst, total_score
+            )
+
+        prompt = self._build_deep_report_prompt(
+            ts_code, name, latest, technical, fundamental, catalyst, total_score
+        )
+
+        # —— Redis 缓存（相同股票+日期 5分钟内不重复调用） ——
+        cache_key = f"llm_report:{ts_code}:{latest.get('trade_date', '')}"
+        try:
+            from app.core.database import redis_client
+            from app.infrastructure.cache import RedisCache
+            cache = RedisCache(redis_client)
+            cached = await cache.get(hashlib.md5(cache_key.encode()).hexdigest())
+            if cached:
+                return cached
+        except Exception:
+            pass
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                api_key=llm_config["api_key"],
+                base_url=llm_config["base_url"],
+            )
+
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.chat.completions.create,
+                    model=llm_config["model"] or "gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": f"请分析{name}({ts_code})"},
+                    ],
+                    temperature=0.4,
+                    max_tokens=800,
+                ),
+                timeout=12.0,
+            )
+
+            raw_text = response.choices[0].message.content.strip()
+            report = {
+                "source": "llm",
+                "model": llm_config.get("model", ""),
+                "raw": raw_text,
+                "sections": self._parse_report_sections(raw_text),
+            }
+
+            # 写入缓存
+            try:
+                await cache.set(
+                    hashlib.md5(cache_key.encode()).hexdigest(),
+                    report,
+                    ttl=300,
+                )
+            except Exception:
+                pass
+
+            return report
+
+        except asyncio.TimeoutError:
+            print(f"  [llm_report] LLM超时: {ts_code}")
+        except Exception as e:
+            print(f"  [llm_report] LLM调用失败: {ts_code} — {e}")
+
+        return self._build_fallback_report(
+            ts_code, name, latest, technical, fundamental, catalyst, total_score
+        )
+
+    def _build_fallback_report(
+        self,
+        ts_code: str,
+        name: str,
+        latest: dict,
+        technical: dict,
+        fundamental: dict,
+        catalyst: dict,
+        total_score: float,
+    ) -> dict:
+        """LLM不可用时，用结构化摘要作为降级方案"""
+        action = "回避"
+        if total_score >= 75:
+            action = "值得关注"
+        elif total_score >= 55:
+            action = "观望"
+
+        lines = [
+            f"## 核心观点",
+            f"综合评分{total_score}分，建议{action}。{technical.get('trend_strength', '震荡')}趋势。",
+            "",
+            f"## 技术面研判",
+            f"趋势：{technical.get('trend_strength', '未知')}。"
+            f"指标状态：MACD {technical.get('indicators_status', {}).get('macd', '中性')}、"
+            f"RSI {technical.get('indicators_status', {}).get('rsi', '中性')}、"
+            f"KDJ {technical.get('indicators_status', {}).get('kdj', '中性')}。",
+            "；".join(technical.get("reasons", [])[:3]),
+            "",
+            f"## 基本面评估",
+            f"行业：{fundamental.get('industry_analysis', '未知')}。{fundamental.get('cap_analysis', '未知')}。",
+            "；".join(fundamental.get("reasons", [])[:2]),
+            "",
+            f"## 催化剂与风险",
+            "；".join(catalyst.get("reasons", [])[:3]),
+            "",
+            f"## 操作建议",
+            f"综合评分{total_score}分，注意控制仓位与风险。",
+        ]
+
+        raw_text = "\n".join([l for l in lines if l])
+
+        return {
+            "source": "fallback",
+            "model": "",
+            "raw": raw_text,
+            "sections": self._parse_report_sections(raw_text),
+        }
+
+    def _parse_report_sections(self, raw_text: str) -> dict:
+        """从LLM输出中解析各章节"""
+        sections = {}
+        current_key = None
+        for line in raw_text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                current_key = stripped[3:].strip()
+                sections[current_key] = []
+            elif current_key and stripped:
+                sections[current_key].append(stripped)
+        return {k: "\n".join(v) for k, v in sections.items()}
 
     async def analyze_batch(self, ts_codes: List[str]) -> List[Dict]:
         """批量分析（并行 + 信号量控制并发）"""

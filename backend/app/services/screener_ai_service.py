@@ -332,6 +332,44 @@ def _build_chat_messages(query: str, history: List[dict], industry_list: List[st
     return messages
 
 
+def _build_chat_stream_system_prompt(industry_list: List[str]) -> str:
+    """流式对话专用的 System Prompt —— 要求LLM先输出自然语言，再输出JSON"""
+    industries_str = "、".join(industry_list)
+    return f"""你是一个A股智能选股助手，帮助用户通过对话筛选A股股票。
+
+你可以做以下几件事：
+1. 回答用户关于选股条件的问题
+2. 根据用户描述解析出筛选条件
+3. 判断用户是否想要筛选股票（should_search）
+4. 提供选股建议和分析
+
+可选筛选条件：
+- 技术信号(technical): macd_cross(MACD金叉), kdj_cross(KDJ金叉), ma_bullish(均线多头), ma_bearish(均线空头), rsi_oversold(RSI超卖), rsi_overbought(RSI超买), volume_surge(放量), volume_shrink(缩量), boll_breakout_up(布林突破上轨), boll_breakout_down(布林跌破下轨), v_shape_recovery(V型反转), consolidation(缩量盘整), continuous_up_3d(连涨3日), continuous_volume_3d(连续放量3日)
+- 形态(pattern): breakout_20d_high(突破20日新高), breakout_60d_high(突破60日新高), drop_20d_low(跌破20日新低)
+- 基本面(fundamental): pe(市盈率), pb(市净率), roe(净资产收益率%), dividend_yield(股息率%), total_mv(总市值,万元), revenue_growth(营收增长率%), profit_growth(净利润增长率%)
+- 行情(quote): price(股价,元), pct_change(涨跌幅%), turnover_rate(换手率%), volume(成交量)
+- 行业: 从以下列表中选择（可多选）：{industries_str}
+
+请先输出1-2句自然语言回复，然后在结尾附上JSON：
+```json
+{{
+  "text": "你的自然语言回复",
+  "conditions": [
+    {{"category": "technical", "field": "macd_cross", "op": "eq", "value": true}}
+  ],
+  "industries": ["行业名1", "行业名2"],
+  "should_search": true
+}}
+```
+
+规则：
+- text 字段用中文回复，简短专业（1-2句话）
+- 如果用户在问选股相关，设置 should_search=true 并解析条件
+- 如果用户只是闲聊，设置 should_search=false
+- 行业名必须从上面的行业列表中选择
+- JSON 放在代码块中（```json ... ```）"""
+
+
 class ScreenerAIService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
@@ -583,6 +621,143 @@ class ScreenerAIService:
                 "text": "抱歉，处理时出现内部错误，请稍后重试。",
                 "conditions": [], "industries": [], "stocks": [], "stock_count": 0,
             }
+
+    # ——————————————————————————————————————————
+    # SSE 流式 AI 对话
+    # ——————————————————————————————————————————
+
+    async def ai_chat_stream(self, query: str, history: List[dict]):
+        """流式 AI 对话 — 返回异步生成器，逐 token 产出 SSE 事件
+
+        每个 yield 是一个 dict：
+          - {"type": "chunk", "text": "..."}          → 文本片段
+          - {"type": "done", "text": "全文",           → 最终结果
+             "conditions": [...], "industries": [...],
+             "stocks": [...], "stock_count": N}
+          - {"type": "error", "text": "..."}           → 错误
+        """
+        import traceback
+        llm_config = await _get_llm_config(self.db)
+
+        # LLM 不可用 → 使用关键词匹配兜底
+        if not _is_llm_available(llm_config):
+            result = await self.ai_chat(query, history)
+            if result.get("text"):
+                # 模拟流式输出（按字符分批发送）
+                text = result["text"]
+                chunk_size = max(1, len(text) // 5)
+                for i in range(0, len(text), chunk_size):
+                    yield {"type": "chunk", "text": text[i:i+chunk_size]}
+                    await asyncio.sleep(0.05)
+            yield {
+                "type": "done",
+                "text": result.get("text", ""),
+                "conditions": result.get("conditions", []),
+                "industries": result.get("industries", []),
+                "stocks": result.get("stocks", []),
+                "stock_count": result.get("stock_count", 0),
+            }
+            return
+
+        industry_list = await _get_industry_list(self.db)
+        system_prompt = _build_chat_stream_system_prompt(industry_list)
+
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in history:
+            if msg.get("role") in ("user", "assistant"):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": query})
+
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(
+                api_key=llm_config["api_key"],
+                base_url=llm_config["base_url"],
+            )
+
+            stream = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=llm_config["model"],
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=2048,
+                    stream=True,
+                ),
+                timeout=3.0,  # 连接超时
+            )
+
+            full_text = ""
+            async for chunk in stream:
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if delta and delta.content:
+                    full_text += delta.content
+                    yield {"type": "chunk", "text": delta.content}
+
+            # ——— 解析完整响应中的 JSON ———
+            json_match = re.search(r'\{[\s\S]*\}', full_text)
+            llm_data = json.loads(json_match.group()) if json_match else {}
+
+            text = llm_data.get("text", full_text)
+            conditions_data = llm_data.get("conditions", [])
+            industries = llm_data.get("industries", [])
+            should_search = llm_data.get("should_search", False)
+
+            # 解析条件
+            conditions = []
+            for c in conditions_data:
+                if c.get("field"):
+                    try:
+                        conditions.append(ScreenerCondition(**c))
+                    except Exception:
+                        pass
+
+            # 关键词兜底
+            if not conditions and not industries and should_search:
+                query_lower = query.lower()
+                seen_fields = set()
+                sorted_keywords = sorted(FAST_KEYWORD_MAP.keys(), key=len, reverse=True)
+                for keyword in sorted_keywords:
+                    if keyword.lower() in query_lower:
+                        kw_conds = FAST_KEYWORD_MAP[keyword]
+                        kw_fields = tuple(c.field for c in kw_conds)
+                        if kw_fields not in seen_fields:
+                            seen_fields.add(kw_fields)
+                            conditions.extend(kw_conds)
+
+            # 执行筛选
+            stocks = []
+            stock_count = 0
+            if should_search or conditions or industries:
+                all_conditions = []
+                if industries:
+                    valid_set = set(industry_list)
+                    valid_industries = [ind for ind in industries if ind in valid_set]
+                    if valid_industries:
+                        all_conditions.append(
+                            ScreenerCondition(category="quote", field="industry", op="in_", values=valid_industries)
+                        )
+                all_conditions.extend(conditions)
+                try:
+                    stocks = await self.screener_service.screen(all_conditions, limit=20)
+                    stock_count = len(stocks)
+                except Exception as e:
+                    print(f"  [ai_chat_stream] 筛选失败: {e}")
+
+            yield {
+                "type": "done",
+                "text": text,
+                "conditions": [c.model_dump() for c in conditions],
+                "industries": industries,
+                "stocks": stocks,
+                "stock_count": stock_count,
+            }
+
+        except asyncio.TimeoutError:
+            print("  [ai_chat_stream] LLM连接超时")
+            yield {"type": "error", "text": "AI服务响应超时，请稍后重试。"}
+        except Exception as e:
+            print(f"  [ai_chat_stream] 流式异常: {traceback.format_exc()}")
+            yield {"type": "error", "text": f"流式处理出现错误，请重试。"}
 
     def _get_tag_label(self, field: str) -> str:
         labels = {

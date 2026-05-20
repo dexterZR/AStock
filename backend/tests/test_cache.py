@@ -24,7 +24,7 @@ class TestRedisCache:
         mock_redis.get.return_value = None
         result = await cache.get("nonexistent")
         assert result is None
-        mock_redis.get.assert_called_once_with("nonexistent")
+        mock_redis.get.assert_called_once_with("cache:nonexistent")
 
     async def test_get_existing_key(self, cache, mock_redis):
         mock_redis.get.return_value = json.dumps({"key": "value"}, ensure_ascii=False)
@@ -35,7 +35,7 @@ class TestRedisCache:
         await cache.set("mykey", {"data": 123}, ttl=600)
         mock_redis.setex.assert_called_once()
         args = mock_redis.setex.call_args
-        assert args[0][0] == "mykey"
+        assert args[0][0] == "cache:mykey"
         assert args[0][1] == 600
         assert json.loads(args[0][2]) == {"data": 123}
 
@@ -46,7 +46,7 @@ class TestRedisCache:
 
     async def test_delete_keys(self, cache, mock_redis):
         await cache.delete("key1", "key2")
-        mock_redis.delete.assert_called_once_with("key1", "key2")
+        mock_redis.delete.assert_called_once_with("cache:key1", "cache:key2")
 
     async def test_delete_no_keys(self, cache, mock_redis):
         await cache.delete()

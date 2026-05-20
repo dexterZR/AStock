@@ -1,4 +1,6 @@
+import json
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from app.models.response import BaseResponse
 from app.models.screener import ScreenerRequest, AIParseRequest, AIPickRequest, AIAnalyzeRequest, AIChatRequest
 from app.services.screener_service import ScreenerService
@@ -84,3 +86,30 @@ async def ai_chat(
 ):
     data = await ai_service.ai_chat(req.query, req.history)
     return BaseResponse(data=data)
+
+
+@router.post("/ai-chat/stream")
+async def ai_chat_stream(
+    req: AIChatRequest,
+    ai_service: ScreenerAIService = Depends(get_ai_service),
+):
+    """AI 对话 SSE 流式端点
+
+    事件类型：
+    - chunk: LLM 逐 token 输出
+    - done: 解析完成，附带 conditions / stocks
+    - error: 处理异常
+    """
+    async def event_generator():
+        async for event in ai_service.ai_chat_stream(req.query, req.history):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

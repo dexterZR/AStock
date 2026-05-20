@@ -46,7 +46,8 @@
         <div v-if="msg.role === 'assistant'" class="message ai-message">
           <div class="ai-avatar">AI</div>
           <div class="ai-body">
-            <div class="msg-bubble ai-bubble" v-html="renderText(msg.content)"></div>
+            <div class="msg-bubble ai-bubble" :class="{ streaming: msg.streaming }" v-html="renderText(msg.content)"></div>
+            <span v-if="msg.streaming" class="streaming-cursor">▌</span>
 
             <!-- Conditions inline -->
             <div v-if="msg.conditions && msg.conditions.length > 0" class="ai-conditions">
@@ -131,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onUnmounted } from 'vue'
 import { screenerApi } from '@/api/modules/screener'
 import { CONDITION_OPTIONS } from '@/types/screener'
 import type { ScreenerCondition } from '@/types/screener'
@@ -151,11 +152,13 @@ const messages = ref<{
   industries?: string[]
   stocks?: any[]
   stock_count?: number
+  streaming?: boolean  // 是否正在流式接收
 }[]>([])
 const query = ref('')
 const loading = ref(false)
 const collapsed = ref(false)
 const messagesRef = ref<HTMLElement | null>(null)
+let activeStreamController: AbortController | null = null
 
 const suggestions = [
   '近期放量突破的股票',
@@ -215,36 +218,88 @@ async function sendMessage(text?: string) {
   loading.value = true
   scrollToBottom()
 
-  try {
-    const history = messages.value
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(-10, -1) // last 10 messages (exclude current)
-      .map(m => ({ role: m.role, content: m.content }))
-
-    const data: any = await screenerApi.aiChat(msg, history)
-    const hasStocks = data.stocks && data.stocks.length > 0
-    messages.value.push({
-      role: 'assistant',
-      content: data.text || '好的，已处理你的请求。',
-      conditions: data.conditions || [],
-      industries: data.industries || [],
-      stocks: data.stocks || [],
-      stock_count: data.stock_count || 0,
-    })
-    // 自动将股票结果推送到下方的筛选结果区
-    if (hasStocks) {
-      emit('viewStocks', data.stocks)
-    }
-  } catch {
-    messages.value.push({
-      role: 'assistant',
-      content: '抱歉，AI回复失败，请稍后重试。',
-    })
-  } finally {
-    loading.value = false
-    scrollToBottom()
+  // 中断上一个流式请求（如果有）
+  if (activeStreamController) {
+    activeStreamController.abort()
+    activeStreamController = null
   }
+
+  const history = messages.value
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .slice(-10, -1)
+    .map(m => ({ role: m.role, content: m.content }))
+
+  // 优先使用流式
+  const streamMsgIndex = messages.value.length
+  messages.value.push({
+    role: 'assistant',
+    content: '',
+    streaming: true,
+  })
+
+  activeStreamController = screenerApi.aiChatStream(msg, history, {
+    onChunk: (text: string) => {
+      const target = messages.value[streamMsgIndex]
+      if (target) {
+        target.content += text
+        scrollToBottom()
+      }
+    },
+    onDone: (result: any) => {
+      const target = messages.value[streamMsgIndex]
+      if (target) {
+        target.streaming = false
+        target.content = result.text || target.content
+        target.conditions = result.conditions || []
+        target.industries = result.industries || []
+        target.stocks = result.stocks || []
+        target.stock_count = result.stock_count || 0
+      }
+      activeStreamController = null
+      loading.value = false
+      scrollToBottom()
+      if (result.stocks && result.stocks.length > 0) {
+        emit('viewStocks', result.stocks)
+      }
+    },
+    onError: async (errorMsg: string) => {
+      // 流式失败 → 降级到非流式
+      console.warn('[AIChat] SSE流式失败，降级到普通请求:', errorMsg)
+      messages.value.pop()  // 移除空的 streaming 消息
+      activeStreamController = null
+
+      try {
+        const data: any = await screenerApi.aiChat(msg, history)
+        const hasStocks = data.stocks && data.stocks.length > 0
+        messages.value.push({
+          role: 'assistant',
+          content: data.text || '好的，已处理你的请求。',
+          conditions: data.conditions || [],
+          industries: data.industries || [],
+          stocks: data.stocks || [],
+          stock_count: data.stock_count || 0,
+        })
+        if (hasStocks) {
+          emit('viewStocks', data.stocks)
+        }
+      } catch {
+        messages.value.push({
+          role: 'assistant',
+          content: '抱歉，AI回复失败，请稍后重试。',
+        })
+      } finally {
+        loading.value = false
+        scrollToBottom()
+      }
+    },
+  })
 }
+
+onUnmounted(() => {
+  if (activeStreamController) {
+    activeStreamController.abort()
+  }
+})
 
 function applyConditions(conditions: any[], industries: string[]) {
   emit('applyConditions', conditions, industries)
@@ -477,13 +532,24 @@ function scrollToBottom() {
   border-bottom-left-radius: 4px;
 }
 
-.ai-bubble :deep(code) {
-  background: var(--claude-overlay);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-family: var(--font-mono);
+.ai-bubble.streaming {
+  border-color: var(--claude-accent);
+  border-left: 2px solid var(--claude-accent);
+}
+
+.streaming-cursor {
+  display: inline-block;
   color: var(--claude-accent);
+  font-weight: bold;
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .ai-avatar {
