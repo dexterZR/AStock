@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis.asyncio import Redis
@@ -27,6 +28,33 @@ async def detailed_health(db: AsyncIOMotorDatabase = Depends(get_db), redis: Red
         checks["redis"] = f"error: {e}"
     all_ok = all(v == "ok" for v in checks.values())
     return {"status": "ok" if all_ok else "degraded", "checks": checks}
+
+
+@router.get("/health/data-status")
+async def data_status(db: AsyncIOMotorDatabase = Depends(get_db)):
+    """检查数据新鲜度"""
+    latest = await db["daily_quotes"].find_one(
+        {"adjust_flag": "none"},
+        {"trade_date": 1},
+        sort=[("trade_date", -1)],
+    )
+    stock_count = await db["daily_quotes"].count_documents(
+        {"adjust_flag": "none", "trade_date": latest["trade_date"] if latest else ""}
+    )
+    total_stocks = await db["stocks"].count_documents({})
+
+    today_str = datetime.now().strftime("%Y%m%d")
+    last_date = str(latest.get("trade_date", "")) if latest else ""
+    is_fresh = last_date == today_str
+
+    return {
+        "last_trade_date": last_date,
+        "today": today_str,
+        "is_fresh": is_fresh,
+        "stocks_with_data": stock_count,
+        "total_stocks_in_db": total_stocks,
+        "message": "✅ 数据已更新" if is_fresh else f"⚠️ 数据日期为 {last_date}，非今日 {today_str}",
+    }
 
 
 @router.post("/sync")

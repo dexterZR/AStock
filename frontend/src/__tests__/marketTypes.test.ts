@@ -32,6 +32,7 @@ describe('Market Types', () => {
 
   it('MarketOverview', () => {
     const overview: MarketOverview = {
+      trade_date: '20260520',
       indices: [],
       up_count: 2000,
       down_count: 2500,

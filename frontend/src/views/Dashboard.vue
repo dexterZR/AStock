@@ -168,7 +168,7 @@
     </el-row>
 
     <div class="data-timestamp" v-if="overview">
-      📡 数据更新于 {{ new Date().toLocaleString('zh-CN') }} · 共 {{ overview.total_stocks }} 只股票
+      📡 数据日期：{{ formatTradeDate(overview.trade_date) }} · 共 {{ overview.total_stocks }} 只股票
     </div>
 
     <el-dialog v-model="showNewsDetail" :title="currentNews?.title" width="700px">
@@ -313,6 +313,13 @@ function formatNewsTime(dateStr: string) {
   if (hours < 1) return '刚刚'
   if (hours < 24) return `${hours}小时前`
   return dateStr.slice(5, 16)
+}
+
+function formatTradeDate(dateStr: string) {
+  if (!dateStr) return '未知'
+  const s = String(dateStr)
+  if (s.length === 8) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`
+  return s.slice(0, 10)
 }
 
 watch(newsTab, () => { loadNews(true); loadHotNews() })

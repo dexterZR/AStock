@@ -22,7 +22,9 @@ async def lifespan(app: FastAPI):
     from app.core.database import db
     await create_indexes(db)
     app.state.sse_manager = SSEManager()
-    from app.jobs.routine_jobs import start_scheduler
+    from app.jobs.routine_jobs import start_scheduler, startup_data_check
+    # 启动时先检查数据新鲜度，再启动定时调度器
+    await startup_data_check()
     start_scheduler()
     yield
     from app.jobs.routine_jobs import scheduler

@@ -159,7 +159,8 @@ export function useDashboard() {
       let stocks = portfolio.value.map((p: any) => p.ts_code).filter(Boolean)
       if (!stocks.length) stocks = ['600519.SH', '000001.SZ']
       const codes = stocks.slice(0, 3)
-      const res: any = await request.post('/analysis/batch', codes)
+      // 使用较长超时（默认 skip_llm 后响应很快，但仍预留 buffer）
+      const res: any = await request.post('/analysis/batch?skip_llm=true', codes, { timeout: 30000 })
       const results = res || []
       const msgs: any[] = []
       for (const r of results.slice(0, 2)) {

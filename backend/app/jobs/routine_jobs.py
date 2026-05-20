@@ -1,8 +1,64 @@
 """定时数据同步调度器"""
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+from datetime import datetime
 
 scheduler = AsyncIOScheduler()
+
+
+async def startup_data_check():
+    """启动时检查数据新鲜度，如需要则执行增量同步"""
+    from app.core.database import get_job_db
+
+    db, client = await get_job_db()
+    try:
+        # 检查最近一个交易日是否有数据
+        latest = await db["daily_quotes"].find_one(
+            {"adjust_flag": "none"},
+            {"trade_date": 1},
+            sort=[("trade_date", -1)],
+        )
+
+        today_str = datetime.now().strftime("%Y%m%d")
+        need_sync = False
+
+        if not latest:
+            print("⚠️ 数据库中无行情数据，启动首次全量同步...")
+            need_sync = True
+        else:
+            last_date = str(latest.get("trade_date", ""))
+            # 检查最新日期的数据量是否完整（至少1000只股票才算有效同步）
+            stock_count = await db["daily_quotes"].count_documents(
+                {"adjust_flag": "none", "trade_date": last_date}
+            )
+            total_stocks = await db["stocks"].count_documents({})
+
+            print(f"📊 最新数据日期：{last_date}（{stock_count}/{total_stocks}只），今天：{today_str}")
+
+            # 数据落后或数据量不完整时触发同步
+            if last_date < today_str:
+                from datetime import datetime as dt
+                weekday = dt.now().weekday()
+                if weekday < 5:
+                    print(f"⚠️ 数据落后（{last_date} → {today_str}），启动增量同步...")
+                    need_sync = True
+                else:
+                    print(f"📅 今天是周末，最新数据 {last_date} 无需更新")
+            elif stock_count < 1000:
+                print(f"⚠️ 数据量不足（仅{stock_count}只），可能是部分同步，重新全量拉取...")
+                need_sync = True
+            else:
+                print(f"✅ 数据已是最新且完整（{last_date}，{stock_count}只）")
+
+        if need_sync:
+            try:
+                print("🔄 开始启动时数据同步...")
+                await daily_data_pipeline()
+                print("✅ 启动时数据同步完成")
+            except Exception as e:
+                print(f"❌ 启动时数据同步失败: {e}")
+    finally:
+        client.close()
 
 
 async def daily_data_pipeline():

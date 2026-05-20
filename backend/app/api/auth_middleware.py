@@ -27,7 +27,13 @@ PUBLIC_PATHS = {
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 放行公开路径（SSE 由自身的 cookie 认证处理）
-        if request.url.path in PUBLIC_PATHS or request.url.path.startswith("/api/sse/"):
+        # 健康检查和调试端点无需认证
+        is_public = (
+            request.url.path in PUBLIC_PATHS
+            or request.url.path.startswith("/api/sse/")
+            or request.url.path.startswith("/api/health/")
+        )
+        if is_public:
             return await call_next(request)
 
         # 检查 Authorization header

@@ -38,8 +38,13 @@ class MultiAgentAnalysisService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
 
-    async def analyze_stock(self, ts_code: str) -> Dict:
-        """单股票三维度深度分析"""
+    async def analyze_stock(self, ts_code: str, skip_llm: bool = False) -> Dict:
+        """单股票三维度深度分析
+
+        Args:
+            ts_code: 股票代码
+            skip_llm: 是否跳过LLM深度报告（批量/讨论场景建议跳过以加速响应）
+        """
         # 获取最近120天数据（更丰富）
         quotes = await self.db["daily_quotes"].find(
             {"ts_code": ts_code, "adjust_flag": "none"},
@@ -86,18 +91,19 @@ class MultiAgentAnalysisService:
         )
 
         latest = quotes[-1]
-        prev = quotes[-2] if len(quotes) > 1 else latest
 
-        # 调用 LLM 生成深度分析报告（不可用时静默降级）
-        llm_report = await self._generate_llm_deep_report(
-            ts_code=ts_code,
-            name=stock.get("name", "") if stock else "",
-            latest=latest,
-            technical=tech,
-            fundamental=fund,
-            catalyst=catalyst,
-            total_score=total_score,
-        )
+        # 调用 LLM 生成深度分析报告（批量场景可跳过以加速响应）
+        llm_report = None
+        if not skip_llm:
+            llm_report = await self._generate_llm_deep_report(
+                ts_code=ts_code,
+                name=stock.get("name", "") if stock else "",
+                latest=latest,
+                technical=tech,
+                fundamental=fund,
+                catalyst=catalyst,
+                total_score=total_score,
+            )
 
         return {
             "ts_code": ts_code,
@@ -112,7 +118,7 @@ class MultiAgentAnalysisService:
             "key_signals": self._extract_key_signals(quotes, indicators),
             "operation_suggestion": self._operation_suggestion(total_score, quotes, indicators),
             "verdict": self._verdict(total_score, tech, fund, catalyst),
-            "llm_deep_report": llm_report,  # LLM 生成的深度分析报告
+            "llm_deep_report": llm_report,  # LLM 生成的深度分析报告（skip_llm 时为 None）
         }
 
     def _technical_agent(self, quotes: List[Dict], indicators: List[Dict]) -> Dict:
@@ -898,15 +904,20 @@ class MultiAgentAnalysisService:
                 sections[current_key].append(stripped)
         return {k: "\n".join(v) for k, v in sections.items()}
 
-    async def analyze_batch(self, ts_codes: List[str]) -> List[Dict]:
-        """批量分析（并行 + 信号量控制并发）"""
+    async def analyze_batch(self, ts_codes: List[str], skip_llm: bool = True) -> List[Dict]:
+        """批量分析（并行 + 信号量控制并发）
+
+        Args:
+            ts_codes: 股票代码列表
+            skip_llm: 是否跳过LLM深度报告（默认True，讨论面板不需要LLM报告）
+        """
         import asyncio
         sem = asyncio.Semaphore(5)
 
         async def _analyze(code: str) -> Dict:
             async with sem:
                 try:
-                    return await self.analyze_stock(code)
+                    return await self.analyze_stock(code, skip_llm=skip_llm)
                 except Exception as e:
                     return {"ts_code": code, "error": str(e)}
 

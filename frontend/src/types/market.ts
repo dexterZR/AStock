@@ -15,6 +15,7 @@ export interface MarketIndex {
 }
 
 export interface MarketOverview {
+  trade_date: string
   indices: MarketIndex[]
   up_count: number
   down_count: number
