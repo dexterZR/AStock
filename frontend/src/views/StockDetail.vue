@@ -59,14 +59,18 @@
         <template #header>
           <div class="card-hd">
             <span>📊 K线图</span>
-            <div class="kline-tabs">
-              <el-button size="small" :type="klinePeriod === '30' ? 'primary' : ''" @click="changeKlinePeriod('30')">30天</el-button>
-              <el-button size="small" :type="klinePeriod === '60' ? 'primary' : ''" @click="changeKlinePeriod('60')">60天</el-button>
-              <el-button size="small" :type="klinePeriod === '120' ? 'primary' : ''" @click="changeKlinePeriod('120')">120天</el-button>
+            <div class="kline-toolbar">
+              <div class="kline-tabs">
+                <el-button size="small" :type="klinePeriod === '30' ? 'primary' : ''" @click="changeKlinePeriod('30')">30天</el-button>
+                <el-button size="small" :type="klinePeriod === '60' ? 'primary' : ''" @click="changeKlinePeriod('60')">60天</el-button>
+                <el-button size="small" :type="klinePeriod === '120' ? 'primary' : ''" @click="changeKlinePeriod('120')">120天</el-button>
+              </div>
+              <el-button size="small" text @click="refreshKline" :loading="refreshingKline" title="刷新K线数据">🔄 刷新</el-button>
             </div>
           </div>
         </template>
         <KlineChart
+          :key="klineChartKey"
           :data="chartData"
           :ma-data="maData"
           :volume-data="volumeData"
@@ -307,7 +311,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '@/api/request'
@@ -335,11 +339,59 @@ const showChecklist = ref(false)
 const finderKeyword = ref('')
 const editMode = ref(false)
 const saving = ref(false)
+const klineChartKey = ref(0)
+const refreshingKline = ref(false)
+
 const editForm = ref({
   cost_price: 0,
   stop_loss_price: 0,
   add_price: undefined as number | undefined,
   reduce_price: undefined as number | undefined,
+})
+
+let _klineRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+/** 判断是否在 A 股交易时段 */
+function isTradingTime(): boolean {
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  return minutes >= 570 && minutes < 900  // 09:30-15:00
+}
+
+/** 手动刷新 K 线数据 */
+async function refreshKline() {
+  refreshingKline.value = true
+  try {
+    await changeKlinePeriod(klinePeriod.value)
+    klineChartKey.value++  // 强制重建图表，确保完整刷新
+  } finally {
+    refreshingKline.value = false
+  }
+}
+
+// 盘中每 60 秒自动刷新 K 线和行情，盘后不自动刷新
+watch(tsCode, (newCode) => {
+  // 清除旧定时器
+  if (_klineRefreshTimer) {
+    clearInterval(_klineRefreshTimer)
+    _klineRefreshTimer = null
+  }
+  if (!newCode) return
+  // 盘中设置自动刷新
+  if (isTradingTime()) {
+    _klineRefreshTimer = setInterval(() => {
+      refreshKline()
+    }, 60000)
+  }
+})
+
+onUnmounted(() => {
+  if (_klineRefreshTimer) {
+    clearInterval(_klineRefreshTimer)
+    _klineRefreshTimer = null
+  }
 })
 
 const quickStocks = [
@@ -462,6 +514,7 @@ async function saveCostLines() {
 
 /* K线图卡片 */
 .kline-card { margin-bottom: 16px; }
+.kline-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .kline-tabs { display: flex; gap: 4px; }
 .kline-tabs .el-button { padding: 4px 10px; font-size: 12px; }
 

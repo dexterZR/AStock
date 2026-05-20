@@ -325,6 +325,16 @@ function formatTradeDate(dateStr: string) {
 watch(newsTab, () => { loadNews(true); loadHotNews() })
 
 let _refreshTimer: ReturnType<typeof setInterval> | null = null
+let _marketRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+/** 判断当前是否在 A 股交易时段 */
+function isTradingTime(): boolean {
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  return minutes >= 570 && minutes < 900  // 09:30-15:00
+}
 
 onMounted(() => {
   marketStore.fetchMarketOverview()
@@ -335,16 +345,30 @@ onMounted(() => {
   loadNews()
   loadHotNews()
   setTimeout(() => runDiscussion(), 500)
+
+  // 每分钟刷新预警和持仓
   _refreshTimer = setInterval(() => {
     loadAlerts()
     loadPortfolio()
   }, 60000)
+
+  // 盘中每 30 秒刷新大盘数据，盘后每 5 分钟刷新
+  const refreshMarket = () => {
+    marketStore.fetchMarketOverview()
+    loadOverview()
+  }
+  const marketInterval = isTradingTime() ? 30000 : 300000
+  _marketRefreshTimer = setInterval(refreshMarket, marketInterval)
 })
 
 onUnmounted(() => {
   if (_refreshTimer) {
     clearInterval(_refreshTimer)
     _refreshTimer = null
+  }
+  if (_marketRefreshTimer) {
+    clearInterval(_marketRefreshTimer)
+    _marketRefreshTimer = null
   }
 })
 </script>

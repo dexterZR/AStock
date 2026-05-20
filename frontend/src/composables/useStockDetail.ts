@@ -91,14 +91,27 @@ export function useStockDetail() {
     await loadKlineData(period)
   }
 
-  async function loadKlineData(period: string) {
+  /** 计算日期范围 */
+  function calcDateRange(days: number) {
     const now = new Date()
     const endDate = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    const start = parseInt(period)
     const startDateObj = new Date()
-    startDateObj.setDate(startDateObj.getDate() - start - 10)
+    startDateObj.setDate(startDateObj.getDate() - days - 10)
     const startDate = `${startDateObj.getFullYear()}${String(startDateObj.getMonth() + 1).padStart(2, '0')}${String(startDateObj.getDate()).padStart(2, '0')}`
-    await stockStore.fetchKline(tsCode.value, startDate, endDate)
+    return { startDate, endDate }
+  }
+
+  async function loadKlineData(period: string) {
+    const days = parseInt(period)
+    const { startDate, endDate } = calcDateRange(days)
+    // 同时加载 K 线和最新报价
+    const results = await Promise.allSettled([
+      stockStore.fetchKline(tsCode.value, startDate, endDate),
+      request.get(`/quotes/latest/${tsCode.value}`),
+    ])
+    if (results[1].status === 'fulfilled') {
+      latestPrice.value = results[1].value as unknown as QuoteData
+    }
   }
 
   async function loadAll() {
