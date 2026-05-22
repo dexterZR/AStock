@@ -3,7 +3,7 @@ services:
   # MongoDB
   # ====================
   mongo:
-    image: mongo:7.0
+    image: mongo:4.4
     container_name: stock-mongo
     restart: unless-stopped
     ports:
@@ -14,7 +14,7 @@ services:
     environment:
       - MONGO_INITDB_DATABASE=stock_analysis
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
